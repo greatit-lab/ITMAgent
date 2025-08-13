@@ -174,7 +174,7 @@ namespace ITM_Agent.Panels
                 if (folderDialog.ShowDialog() == DialogResult.OK)
                 {
                     _settingsManager.SetBaseFolder(folderDialog.SelectedPath);
-                    LoadFolders();
+                    LoadBaseFolder();
                     OnSettingsChanged();
                 }
             }
@@ -288,7 +288,7 @@ namespace ITM_Agent.Panels
 
         public string BaseFolderPath => _settingsManager.GetBaseFolder();
 
-        public List<string> GetRegexTargetFolders() => _settingsManager.GetRegexList().Values.Distinct(StringComparison.OrdinalIgnoreCase).ToList();
+        public List<string> GetRegexTargetFolders() => _settingsManager.GetRegexList().Values.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 
         /// <summary>
         /// MainForm의 Run/Stop 상태에 따라 UI 컨트롤의 활성화 상태를 업데이트합니다.
@@ -326,7 +326,7 @@ namespace ITM_Agent.Panels
         {
             // *** 버그 수정: 컨트롤이 프로그래밍 방식으로 업데이트 중일 때는 이벤트 발생 방지 ***
             if (_isUpdatingControls) return;
-            
+
             SettingsChanged?.Invoke();
         }
 
