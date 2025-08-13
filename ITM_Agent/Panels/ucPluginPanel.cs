@@ -7,6 +7,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace ITM_Agent.Panels
@@ -31,7 +32,9 @@ namespace ITM_Agent.Panels
             _logManager = logManager ?? throw new ArgumentNullException(nameof(logManager));
 
             InitializeComponent();
-            LoadPluginsFromSettings();
+            // 수정된 부분:
+            // 생성자에서는 더 이상 동기적으로 플러그인을 로드하지 않습니다.
+            // LoadPluginsFromSettings(); // 이 라인을 제거하거나 주석 처리합니다.
         }
 
         #region --- Public Methods ---
@@ -255,6 +258,64 @@ namespace ITM_Agent.Panels
             lb_PluginList.Enabled = enabled;
         }
 
+        /// <summary>
+        /// 설정 파일에서 플러그인 목록을 비동기적으로 로드하여 그 결과를 반환합니다.
+        /// </summary>
+        public async Task<List<PluginListItem>> LoadPluginsAsync()
+        {
+            // 수정된 부분:
+            // Task.Run을 사용하여 백그라운드 스레드에서 파일 I/O 및 어셈블리 로딩을 수행하고,
+            // 그 결과인 List<PluginListItem>을 반환합니다.
+            return await Task.Run(() =>
+            {
+                var loadedPlugins = new List<PluginListItem>();
+                // [RegPlugins] 섹션은 실제로는 키-값 쌍이므로, GetRegexList를 사용하는 것이 맞습니다.
+                var pluginEntries = _settingsManager.GetRegexList();
+        
+                foreach (var entry in pluginEntries)
+                {
+                    string pluginName = entry.Key;
+                    string relativePath = entry.Value;
+                    string fullPath = Path.Combine(AppDomain.Current  .BaseDirectory, relativePath);
+        
+                    if (File.Exists(fullPath))
+                    {
+                        try
+                        {
+                            byte[] dllBytes = File.ReadAllBytes(fullPath);
+                            Assembly asm = Assembly.Load(dllBytes);
+                            
+                            loadedPlugins.Add(new PluginListItem
+                            {
+                                PluginName = asm.GetName().Name,
+                                AssemblyPath = fullPath,
+                                PluginVersion = asm.GetName().Version.ToString()
+                            });
+                        }
+                        catch (Exception ex)
+                        {
+                             _logManager.LogError($"[ucPluginPanel] Failed to load plugin from settings ({pluginName}): {ex.Message}");
+                        }
+                    }
+                }
+                return loadedPlugins;
+            });
+            // UI를 업데이트하던 this.Invoke 구문은 여기서 완전히 제거됩니다.
+        }
+
+        /// <summary>
+        /// 주어진 플러그인 목록으로 내부 목록을 교체하고 UI 디스플레이를 업데이트합니다.
+        /// </summary>
+        public void SetLoadedPluginsAndUpdateUI(List<PluginListItem> plugins)
+        {
+            // 1. 내부 데이터 목록을 외부에서 로드한 결과로 교체합니다.
+            _loadedPlugins.Clear();
+            _loadedPlugins.AddRange(plugins);
+        
+            // 2. 내부 데이터를 기준으로 UI를 갱신합니다.
+            UpdatePluginListDisplay();
+        }
+        
         #endregion
     }
 }
