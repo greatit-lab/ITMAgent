@@ -259,7 +259,7 @@ namespace ITM_Agent.Panels
         }
 
         /// <summary>
-        /// 설정 파일에서 플러그인 목록을 비동기적으로 로드하여 그 결과를 반환합니다.
+        /// 설정 파일에서 플러그인 목록을 비동기적으로 로드하여 UI에 반영합니다.
         /// </summary>
         public async Task<List<PluginListItem>> LoadPluginsAsync()
         {
@@ -271,20 +271,20 @@ namespace ITM_Agent.Panels
                 var loadedPlugins = new List<PluginListItem>();
                 // [RegPlugins] 섹션은 실제로는 키-값 쌍이므로, GetRegexList를 사용하는 것이 맞습니다.
                 var pluginEntries = _settingsManager.GetRegexList();
-        
+
                 foreach (var entry in pluginEntries)
                 {
                     string pluginName = entry.Key;
                     string relativePath = entry.Value;
-                    string fullPath = Path.Combine(AppDomain.Current  .BaseDirectory, relativePath);
-        
+                    string fullPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, relativePath);
+
                     if (File.Exists(fullPath))
                     {
                         try
                         {
                             byte[] dllBytes = File.ReadAllBytes(fullPath);
                             Assembly asm = Assembly.Load(dllBytes);
-                            
+
                             loadedPlugins.Add(new PluginListItem
                             {
                                 PluginName = asm.GetName().Name,
@@ -294,7 +294,7 @@ namespace ITM_Agent.Panels
                         }
                         catch (Exception ex)
                         {
-                             _logManager.LogError($"[ucPluginPanel] Failed to load plugin from settings ({pluginName}): {ex.Message}");
+                            _logManager.LogError($"[ucPluginPanel] Failed to load plugin from settings ({pluginName}): {ex.Message}");
                         }
                     }
                 }
@@ -303,19 +303,16 @@ namespace ITM_Agent.Panels
             // UI를 업데이트하던 this.Invoke 구문은 여기서 완전히 제거됩니다.
         }
 
-        /// <summary>
-        /// 주어진 플러그인 목록으로 내부 목록을 교체하고 UI 디스플레이를 업데이트합니다.
-        /// </summary>
         public void SetLoadedPluginsAndUpdateUI(List<PluginListItem> plugins)
         {
             // 1. 내부 데이터 목록을 외부에서 로드한 결과로 교체합니다.
             _loadedPlugins.Clear();
             _loadedPlugins.AddRange(plugins);
-        
+
             // 2. 내부 데이터를 기준으로 UI를 갱신합니다.
             UpdatePluginListDisplay();
         }
-        
+
         #endregion
     }
 }
