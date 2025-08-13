@@ -10,16 +10,16 @@ using System.Windows.Forms;
 
 namespace ITM_Agent.Panels
 {
-    /// <summary>
-    /// 파일 분류 규칙(대상/제외 폴더, 기준 폴더, 정규식)을 설정하는 UI 패널입니다.
-    /// 모든 설정은 ISettingsManager를 통해 읽고 씁니다.
-    /// </summary>
     public partial class ucConfigurationPanel : UserControl
     {
-        #region --- Fields & Events ---
-
         private readonly ISettingsManager _settingsManager;
-        public event Action<string, Color> StatusUpdated;
+        public event Action<bool> ReadyStatusChanged;
+
+        // *** 버그 수정: 연쇄적인 이벤트 발생을 막기 위한 플래그 ***
+        private bool _isUpdatingControls = false;
+
+        #region --- Fields ---
+        public event Action SettingsChanged;
         public event Action ListSelectionChanged;
 
         // Settings.ini의 섹션 이름을 상수로 관리
@@ -41,27 +41,20 @@ namespace ITM_Agent.Panels
 
         private void RegisterEventHandlers()
         {
-            // 폴더 관리 버튼
+            // 모든 설정 변경 버튼들은 각자의 로직 수행 후 OnSettingsChanged() 호출
             btn_TargetFolder.Click += (s, e) => AddFolder(TargetFoldersSection, lb_TargetList);
             btn_TargetRemove.Click += (s, e) => RemoveSelectedFolders(TargetFoldersSection, lb_TargetList);
             btn_ExcludeFolder.Click += (s, e) => AddFolder(ExcludeFoldersSection, lb_ExcludeList);
             btn_ExcludeRemove.Click += (s, e) => RemoveSelectedFolders(ExcludeFoldersSection, lb_ExcludeList);
             btn_BaseFolder.Click += Btn_BaseFolder_Click;
-
-            // 정규식 관리 버튼
             btn_RegAdd.Click += Btn_RegAdd_Click;
             btn_RegEdit.Click += Btn_RegEdit_Click;
             btn_RegRemove.Click += Btn_RegRemove_Click;
 
-            // UI 상태 변경 감지
-            lb_TargetList.SelectedIndexChanged += (s, e) => ValidateRunButtonState();
-            lb_RegexList.SelectedIndexChanged += (s, e) => ValidateRunButtonState();
-            lb_BaseFolder.TextChanged += (s, e) => ValidateRunButtonState();
-
-            // 외부 알림 이벤트
-            lb_TargetList.SelectedIndexChanged += (s, e) => ListSelectionChanged?.Invoke();
-            lb_ExcludeList.SelectedIndexChanged += (s, e) => ListSelectionChanged?.Invoke();
-            lb_RegexList.SelectedIndexChanged += (s, e) => ListSelectionChanged?.Invoke();
+            // 사용자가 직접 리스트 선택을 변경할 때만 상태 변경 알림
+            lb_TargetList.SelectedIndexChanged += (s, e) => OnSettingsChanged();
+            lb_ExcludeList.SelectedIndexChanged += (s, e) => OnSettingsChanged();
+            lb_RegexList.SelectedIndexChanged += (s, e) => OnSettingsChanged();
         }
 
         #endregion
@@ -77,7 +70,7 @@ namespace ITM_Agent.Panels
             LoadFolders(ExcludeFoldersSection, lb_ExcludeList);
             LoadBaseFolder();
             LoadRegexFromSettings();
-            ValidateRunButtonState();
+            OnSettingsChanged();
         }
 
         private void LoadFolders(string section, ListBox listBox)
@@ -142,7 +135,8 @@ namespace ITM_Agent.Panels
 
                     currentFolders.Add(selectedFolder);
                     _settingsManager.SetFoldersToSection(section, currentFolders);
-                    LoadFolders(section, listBox); // UI 갱신
+                    LoadFolders(section, listBox);
+                    OnSettingsChanged();
                 }
             }
         }
@@ -165,7 +159,8 @@ namespace ITM_Agent.Panels
                 currentFolders.RemoveAll(f => foldersToRemove.Contains(f));
 
                 _settingsManager.SetFoldersToSection(section, currentFolders);
-                LoadFolders(section, listBox); // UI 갱신
+                LoadFolders(section, listBox);
+                OnSettingsChanged();
             }
         }
 
@@ -179,7 +174,8 @@ namespace ITM_Agent.Panels
                 if (folderDialog.ShowDialog() == DialogResult.OK)
                 {
                     _settingsManager.SetBaseFolder(folderDialog.SelectedPath);
-                    LoadBaseFolder(); // UI 갱신
+                    LoadFolders();
+                    OnSettingsChanged();
                 }
             }
         }
@@ -197,7 +193,8 @@ namespace ITM_Agent.Panels
                     var regexDict = _settingsManager.GetRegexList();
                     regexDict[form.RegexPattern] = form.TargetFolder;
                     _settingsManager.SetRegexList(regexDict);
-                    LoadRegexFromSettings(); // UI 갱신
+                    LoadRegexFromSettings();
+                    OnSettingsChanged();
                 }
             }
         }
@@ -210,19 +207,25 @@ namespace ITM_Agent.Panels
                 return;
             }
 
+            // 수정된 부분:
+            // 리스트박스의 선택된 문자열("1. regex -> C:\path")을 파싱하여
+            // 기존 정규식과 폴더 경로를 추출합니다.
             var (oldRegex, oldFolder) = ParseSelectedRegexItem(lb_RegexList.SelectedItem.ToString());
-            if (oldRegex == null) return;
+            if (oldRegex == null) return; // 파싱 실패 시 중단
 
             using (var form = new RegexConfigForm(_settingsManager.GetBaseFolder()) { RegexPattern = oldRegex, TargetFolder = oldFolder })
             {
                 if (form.ShowDialog() == DialogResult.OK)
                 {
                     var regexDict = _settingsManager.GetRegexList();
-                    // 키가 변경되었을 수 있으므로 기존 키 삭제 후 새 키 추가
+
+                    // 키(정규식)가 변경되었을 수 있으므로, 기존 키는 삭제하고 새로운 키로 값을 저장합니다.
                     regexDict.Remove(oldRegex);
                     regexDict[form.RegexPattern] = form.TargetFolder;
+
                     _settingsManager.SetRegexList(regexDict);
-                    LoadRegexFromSettings(); // UI 갱신
+                    LoadRegexFromSettings(); // UI 목록 새로고침
+                    OnSettingsChanged();     // MainForm에 상태 변경 알림
                 }
             }
         }
@@ -237,24 +240,34 @@ namespace ITM_Agent.Panels
 
             if (MessageBox.Show("선택한 항목을 삭제하시겠습니까?", "삭제 확인", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes)
             {
+                // 수정된 부분:
+                // 선택된 항목에서 삭제할 정규식(키)만 추출합니다.
                 var (regexToRemove, _) = ParseSelectedRegexItem(lb_RegexList.SelectedItem.ToString());
                 if (regexToRemove == null) return;
 
                 var regexDict = _settingsManager.GetRegexList();
-                regexDict.Remove(regexToRemove);
-                _settingsManager.SetRegexList(regexDict);
-                LoadRegexFromSettings(); // UI 갱신
+                if (regexDict.Remove(regexToRemove))
+                {
+                    _settingsManager.SetRegexList(regexDict);
+                    LoadRegexFromSettings(); // UI 목록 새로고침
+                    OnSettingsChanged();     // MainForm에 상태 변경 알림
+                }
             }
         }
 
         private (string regex, string folder) ParseSelectedRegexItem(string item)
         {
+            // 수정된 부분:
+            // "->"를 기준으로 문자열을 분리하고, 앞뒤 공백을 제거하여
+            // 정확한 정규식(key)과 폴더(value)를 추출합니다.
             int arrowIndex = item.IndexOf("->");
             if (arrowIndex < 0) return (null, null);
 
-            string regex = item.Substring(item.IndexOf(' ') + 1, arrowIndex - item.IndexOf(' ') - 2).Trim();
-            string folder = item.Substring(arrowIndex + 2).Trim();
-            return (regex, folder);
+            // "N. " 부분을 제거하고 정규식 추출
+            string regexPart = item.Substring(item.IndexOf(' ') + 1, arrowIndex - item.IndexOf(' ') - 2).Trim();
+            string folderPart = item.Substring(arrowIndex + 2).Trim();
+
+            return (regexPart, folderPart);
         }
 
         #endregion
@@ -267,23 +280,15 @@ namespace ITM_Agent.Panels
         public bool IsReadyToRun()
         {
             bool hasTarget = lb_TargetList.Items.Count > 0;
-            bool hasBase = !string.IsNullOrEmpty(_settingsManager.GetBaseFolder());
+            // BaseFolder 텍스트가 리소스 문자열이 아닌 유효한 경로인지 확인
+            bool hasBase = !string.IsNullOrEmpty(_settingsManager.GetBaseFolder()) && lb_BaseFolder.Text != Resources.MSG_BASE_NOT_SELECTED;
             bool hasRegex = lb_RegexList.Items.Count > 0;
             return hasTarget && hasBase && hasRegex;
         }
 
         public string BaseFolderPath => _settingsManager.GetBaseFolder();
 
-        /// <summary>
-        /// 정규식에 설정된 모든 대상 폴더 경로의 고유 목록을 반환합니다.
-        /// </summary>
-        public List<string> GetRegexTargetFolders()
-        {
-            return _settingsManager.GetRegexList()
-                .Values
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
-        }
+        public List<string> GetRegexTargetFolders() => _settingsManager.GetRegexList().Values.Distinct(StringComparison.OrdinalIgnoreCase).ToList();
 
         /// <summary>
         /// MainForm의 Run/Stop 상태에 따라 UI 컨트롤의 활성화 상태를 업데이트합니다.
@@ -295,33 +300,34 @@ namespace ITM_Agent.Panels
 
         private void SetControlsEnabled(bool isEnabled)
         {
-            // 모든 버튼과 리스트박스의 활성화 상태를 동기화
-            btn_TargetFolder.Enabled = isEnabled;
-            btn_TargetRemove.Enabled = isEnabled;
-            btn_ExcludeFolder.Enabled = isEnabled;
-            btn_ExcludeRemove.Enabled = isEnabled;
-            btn_BaseFolder.Enabled = isEnabled;
-            btn_RegAdd.Enabled = isEnabled;
-            btn_RegEdit.Enabled = isEnabled;
-            btn_RegRemove.Enabled = isEnabled;
-            lb_TargetList.Enabled = isEnabled;
-            lb_ExcludeList.Enabled = isEnabled;
-            lb_RegexList.Enabled = isEnabled;
+            // *** 버그 수정: 연쇄 이벤트 방지 플래그 설정 ***
+            _isUpdatingControls = true;
+            try
+            {
+                btn_TargetFolder.Enabled = isEnabled;
+                btn_TargetRemove.Enabled = isEnabled;
+                btn_ExcludeFolder.Enabled = isEnabled;
+                btn_ExcludeRemove.Enabled = isEnabled;
+                btn_BaseFolder.Enabled = isEnabled;
+                btn_RegAdd.Enabled = isEnabled;
+                btn_RegEdit.Enabled = isEnabled;
+                btn_RegRemove.Enabled = isEnabled;
+                lb_TargetList.Enabled = isEnabled;
+                lb_ExcludeList.Enabled = isEnabled;
+                lb_RegexList.Enabled = isEnabled;
+            }
+            finally
+            {
+                _isUpdatingControls = false; // 플래그 해제
+            }
         }
 
-        /// <summary>
-        /// MainForm의 상태를 기반으로 이 패널의 상태를 업데이트하고 UI에 반영합니다.
-        /// </summary>
-        private void ValidateRunButtonState()
+        private void OnSettingsChanged()
         {
-            if (IsReadyToRun())
-            {
-                StatusUpdated?.Invoke("Ready to Run", Color.Green);
-            }
-            else
-            {
-                StatusUpdated?.Invoke("Stopped", Color.Red);
-            }
+            // *** 버그 수정: 컨트롤이 프로그래밍 방식으로 업데이트 중일 때는 이벤트 발생 방지 ***
+            if (_isUpdatingControls) return;
+            
+            SettingsChanged?.Invoke();
         }
 
         #endregion
