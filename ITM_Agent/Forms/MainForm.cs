@@ -95,12 +95,14 @@ namespace ITM_Agent.Forms
         private void InitializeUserControls()
         {
             _ucConfigPanel = new ucConfigurationPanel(_settingsManager);
-            _ucConfigPanel.SettingsChanged += RefreshUIState; // 이벤트 구독
+            _ucConfigPanel.SettingsChanged += RefreshUIState;
             _ucPluginPanel = new ucPluginPanel(_settingsManager, _logManager);
             _ucOverrideNamesPanel = new ucOverrideNamesPanel(_settingsManager, _ucConfigPanel, _logManager);
             _ucImageTransPanel = new ucImageTransPanel(_settingsManager, _ucConfigPanel, _logManager);
             _ucUploadPanel = new ucUploadPanel(_ucConfigPanel, _ucPluginPanel, _settingsManager, _ucOverrideNamesPanel, _logManager);
             _ucOptionPanel = new ucOptionPanel(_settingsManager);
+
+            _ucPluginPanel.PluginsChanged += (sender, args) => _ucUploadPanel.LoadPluginItems();
 
             _ucOptionPanel.DebugModeChanged += isDebug =>
             {
