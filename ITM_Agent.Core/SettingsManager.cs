@@ -334,6 +334,43 @@ namespace ITM_Agent.Core
             }
         }
 
+        public Dictionary<string, string> GetSectionAsDictionary(string sectionName)
+        {
+            var dictionary = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            lock (_fileLock)
+            {
+                if (!File.Exists(_settingsFilePath)) return dictionary;
+
+                bool inSection = false;
+                foreach (var line in File.ReadLines(_settingsFilePath))
+                {
+                    string trimmedLine = line.Trim();
+                    if (trimmedLine.Equals(sectionName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        inSection = true;
+                        continue;
+                    }
+
+                    if (inSection)
+                    {
+                        if (trimmedLine.StartsWith("[")) break; // 다른 섹션 시작 시 중단
+
+                        var parts = trimmedLine.Split(new[] { '=' }, 2);
+                        if (parts.Length == 2)
+                        {
+                            string key = parts[0].Trim();
+                            string value = parts[1].Trim();
+                            if (!string.IsNullOrEmpty(key))
+                            {
+                                dictionary[key] = value;
+                            }
+                        }
+                    }
+                }
+            }
+            return dictionary;
+        }
+
         #endregion
     }
 }
