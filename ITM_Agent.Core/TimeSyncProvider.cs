@@ -3,6 +3,7 @@ using ITM_Agent.Common;
 using Npgsql;
 using System;
 using System.Threading;
+using ITM_Agent.Common.Interfaces;
 
 namespace ITM_Agent.Core
 {
@@ -10,7 +11,7 @@ namespace ITM_Agent.Core
     /// 서버와 에이전트 PC 간의 시간 오차를 보정하고, 모든 시간을 한국 표준시(KST)로 변환하는
     /// 중앙 집중형 시간 동기화 싱글턴 서비스 클래스입니다.
     /// </summary>
-    public sealed class TimeSyncProvider : IDisposable
+    public sealed class TimeSyncProvider : IDisposable, ITimeSyncProvider
     {
         #region --- Singleton Implementation ---
 
