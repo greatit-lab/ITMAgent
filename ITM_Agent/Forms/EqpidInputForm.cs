@@ -51,109 +51,72 @@ namespace ITM_Agent.Forms
         /// </summary>
         private void InitializeComponent()
         {
-            this._lblInstruction = new System.Windows.Forms.Label();
-            this._textBoxEqpid = new System.Windows.Forms.TextBox();
-            this._lblWarning = new System.Windows.Forms.Label();
-            this._btnSubmit = new System.Windows.Forms.Button();
-            this._btnCancel = new System.Windows.Forms.Button();
-            this._picIcon = new System.Windows.Forms.PictureBox();
-            this._rdoOnto = new System.Windows.Forms.RadioButton();
-            this._rdoNova = new System.Windows.Forms.RadioButton();
-            ((System.ComponentModel.ISupportInitialize)(this._picIcon)).BeginInit();
-            this.SuspendLayout();
-            // 
-            // _lblInstruction
-            // 
-            this._lblInstruction.AutoSize = true;
-            this._lblInstruction.Location = new System.Drawing.Point(25, 20);
-            this._lblInstruction.Name = "_lblInstruction";
-            this._lblInstruction.Size = new System.Drawing.Size(229, 12);
-            this._lblInstruction.TabIndex = 0;
-            this._lblInstruction.Text = "신규로 등록 필요한 장비명을 입력하세요.";
-            // 
-            // _textBoxEqpid
-            // 
-            this._textBoxEqpid.Location = new System.Drawing.Point(115, 70);
-            this._textBoxEqpid.Name = "_textBoxEqpid";
-            this._textBoxEqpid.Size = new System.Drawing.Size(150, 21);
-            this._textBoxEqpid.TabIndex = 3;
-            // 
-            // _lblWarning
-            // 
-            this._lblWarning.AutoSize = true;
-            this._lblWarning.ForeColor = System.Drawing.Color.Red;
-            this._lblWarning.Location = new System.Drawing.Point(115, 95);
-            this._lblWarning.Name = "_lblWarning";
-            this._lblWarning.Size = new System.Drawing.Size(133, 12);
-            this._lblWarning.TabIndex = 4;
-            this._lblWarning.Text = "장비명을 입력해주세요.";
-            this._lblWarning.Visible = false;
-            // 
-            // _btnSubmit
-            // 
-            this._btnSubmit.Location = new System.Drawing.Point(50, 120);
-            this._btnSubmit.Name = "_btnSubmit";
-            this._btnSubmit.Size = new System.Drawing.Size(90, 23);
-            this._btnSubmit.TabIndex = 5;
-            this._btnSubmit.Text = "Submit";
-            // 
-            // _btnCancel
-            // 
-            this._btnCancel.Location = new System.Drawing.Point(150, 120);
-            this._btnCancel.Name = "_btnCancel";
-            this._btnCancel.Size = new System.Drawing.Size(90, 23);
-            this._btnCancel.TabIndex = 6;
-            this._btnCancel.Text = "Cancel";
-            // 
-            // _picIcon
-            // 
-            this._picIcon.Location = new System.Drawing.Point(22, 36);
-            this._picIcon.Name = "_picIcon";
-            this._picIcon.Size = new System.Drawing.Size(75, 75);
-            this._picIcon.SizeMode = System.Windows.Forms.PictureBoxSizeMode.StretchImage;
-            this._picIcon.TabIndex = 7;
-            this._picIcon.TabStop = false;
-            // 
-            // _rdoOnto
-            // 
-            this._rdoOnto.AutoSize = true;
-            this._rdoOnto.Checked = true;
-            this._rdoOnto.Location = new System.Drawing.Point(115, 45);
-            this._rdoOnto.Name = "_rdoOnto";
-            this._rdoOnto.Size = new System.Drawing.Size(58, 16);
-            this._rdoOnto.TabIndex = 1;
-            this._rdoOnto.TabStop = true;
-            this._rdoOnto.Text = "ONTO";
-            // 
-            // _rdoNova
-            // 
-            this._rdoNova.AutoSize = true;
-            this._rdoNova.Location = new System.Drawing.Point(115, 45);
-            this._rdoNova.Name = "_rdoNova";
-            this._rdoNova.Size = new System.Drawing.Size(57, 16);
-            this._rdoNova.TabIndex = 2;
-            this._rdoNova.Text = "NOVA";
-            // 
-            // EqpidInputForm
-            // 
-            this.ClientSize = new System.Drawing.Size(284, 161);
-            this.ControlBox = false;
-            this.Controls.Add(this._lblInstruction);
-            this.Controls.Add(this._rdoOnto);
-            this.Controls.Add(this._rdoNova);
-            this.Controls.Add(this._textBoxEqpid);
-            this.Controls.Add(this._lblWarning);
-            this.Controls.Add(this._btnSubmit);
-            this.Controls.Add(this._btnCancel);
-            this.Controls.Add(this._picIcon);
-            this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedDialog;
-            this.Name = "EqpidInputForm";
-            this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
+            // --- Form Properties ---
             this.Text = "New EQPID Registry";
-            ((System.ComponentModel.ISupportInitialize)(this._picIcon)).EndInit();
+            this.Size = new Size(300, 200);
+            this.StartPosition = FormStartPosition.CenterScreen;
+            this.FormBorderStyle = FormBorderStyle.FixedDialog;
+            this.ControlBox = false; // 닫기 버튼 비활성화
+
+            // --- Controls Initialization ---
+            _lblInstruction = new Label();
+            _textBoxEqpid = new TextBox();
+            _lblWarning = new Label();
+            _btnSubmit = new Button();
+            _btnCancel = new Button();
+            _picIcon = new PictureBox();
+            _rdoOnto = new RadioButton();
+            _rdoNova = new RadioButton();
+
+            this.SuspendLayout();
+
+            // --- Control Properties & Layout ---
+            _lblInstruction.Text = "신규로 등록 필요한 장비명을 입력하세요.";
+            _lblInstruction.Location = new Point(25, 20);
+            _lblInstruction.AutoSize = true;
+
+            _rdoOnto.Text = "ONTO";
+            _rdoOnto.Location = new Point(115, 45);
+            _rdoOnto.AutoSize = true;
+            _rdoOnto.Checked = true; // 기본값
+
+            _rdoNova.Text = "NOVA";
+            _rdoNova.Location = new Point(_rdoOnto.Left + _rdoOnto.Width + 10, 45);
+            _rdoNova.AutoSize = true;
+
+            _textBoxEqpid.Location = new Point(115, 70);
+            _textBoxEqpid.Size = new Size(150, 21);
+
+            _lblWarning.Text = "장비명을 입력해주세요.";
+            _lblWarning.Location = new Point(115, 95);
+            _lblWarning.ForeColor = Color.Red;
+            _lblWarning.AutoSize = true;
+            _lblWarning.Visible = false;
+
+            _btnSubmit.Text = "Submit";
+            _btnSubmit.Location = new Point(50, 120);
+            _btnSubmit.Size = new Size(90, 23);
+
+            _btnCancel.Text = "Cancel";
+            _btnCancel.Location = new Point(150, 120);
+            _btnCancel.Size = new Size(90, 23);
+
+            _picIcon.Size = new Size(75, 75);
+            _picIcon.Location = new Point(22, 36);
+            _picIcon.SizeMode = PictureBoxSizeMode.StretchImage;
+
+            // --- Add Controls to Form ---
+            this.Controls.Add(_lblInstruction);
+            this.Controls.Add(_rdoOnto);
+            this.Controls.Add(_rdoNova);
+            this.Controls.Add(_textBoxEqpid);
+            this.Controls.Add(_lblWarning);
+            this.Controls.Add(_btnSubmit);
+            this.Controls.Add(_btnCancel);
+            this.Controls.Add(_picIcon);
+
             this.ResumeLayout(false);
             this.PerformLayout();
-
         }
 
         /// <summary>
