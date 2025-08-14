@@ -60,7 +60,6 @@ namespace ITM_Agent.Forms
             this._rdoOnto = new System.Windows.Forms.RadioButton();
             this._rdoNova = new System.Windows.Forms.RadioButton();
             ((System.ComponentModel.ISupportInitialize)(this._picIcon)).BeginInit();
-
             this.SuspendLayout();
             //
             // _lblInstruction
@@ -79,7 +78,7 @@ namespace ITM_Agent.Forms
             this._textBoxEqpid.Size = new System.Drawing.Size(150, 21);
             this._textBoxEqpid.TabIndex = 3;
             //
-            // _textBoxEqpid
+            // _lblWarning
             //
             this._lblWarning.AutoSize = true;
             this._lblWarning.ForeColor = System.Drawing.Color.Red;
@@ -126,7 +125,7 @@ namespace ITM_Agent.Forms
             this._rdoOnto.TabStop = true;
             this._rdoOnto.Text = "ONTO";
             //
-            // _rdoOnto
+            // _rdoNova
             //
             this._rdoNova.AutoSize = true;
             this._rdoNova.Location = new System.Drawing.Point(197, 45);
@@ -139,17 +138,17 @@ namespace ITM_Agent.Forms
             //
             this.ClientSize = new System.Drawing.Size(284, 161);
             this.ControlBox = false;
-            this.Controls.Add(_lblInstruction);
-            this.Controls.Add(_rdoOnto);
-            this.Controls.Add(_rdoNova);
-            this.Controls.Add(_textBoxEqpid);
-            this.Controls.Add(_lblWarning);
-            this.Controls.Add(_btnSubmit);
-            this.Controls.Add(_btnCancel);
-            this.Controls.Add(_picIcon);
-            this.FormBorderStyle = FormBorderStyle.FixedDialog;
+            this.Controls.Add(this._lblInstruction);
+            this.Controls.Add(this._rdoOnto);
+            this.Controls.Add(this._rdoNova);
+            this.Controls.Add(this._textBoxEqpid);
+            this.Controls.Add(this._lblWarning);
+            this.Controls.Add(this._btnSubmit);
+            this.Controls.Add(this._btnCancel);
+            this.Controls.Add(this._picIcon);
+            this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedDialog;
             this.Name = "EqpidInputForm";
-            this.StartPosition = FormStartPosition.CenterScreen;
+            this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
             this.Text = "New EQPID Registry";
             ((System.ComponentModel.ISupportInitialize)(this._picIcon)).EndInit();
             this.ResumeLayout(false);
