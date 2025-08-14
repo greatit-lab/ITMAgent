@@ -26,7 +26,7 @@ namespace ITM_Agent.Common.Interfaces
         /// </summary>
         /// <param name="settings">설정 값에 접근할 수 있는 ISettingsManager 서비스입니다.</param>
         /// <param name="logger">로그를 기록할 수 있는 ILogManager 서비스입니다.</param>
-        void Initialize(ISettingsManager settings, ILogManager logger);
+        void Initialize(ISettingsManager settings, ILogManager logger, ITimeSyncProvider timeSync);
 
         /// <summary>
         /// 플러그인의 핵심 로직을 실행합니다.
