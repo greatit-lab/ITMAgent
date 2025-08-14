@@ -83,10 +83,9 @@ namespace ITM_Agent.Panels
         // ... (LoadAllSettings, LoadTargetFolderItems, LoadPluginItems 등 이전과 동일한 메서드들) ...
         #region --- Settings Loading & UI Refresh ---
 
-        private void LoadAllSettings()
+        public void LoadAllSettings()
         {
             LoadTargetFolderItems();
-            LoadPluginItems();
 
             LoadSetting("WaferFlat", cb_WaferFlat_Path, cb_FlatPlugin);
             LoadSetting("PreAlign", cb_PreAlign_Path, cb_PreAlignPlugin);
@@ -113,7 +112,7 @@ namespace ITM_Agent.Panels
             }
         }
 
-        private void LoadPluginItems()
+        public void LoadPluginItems()
         {
             if (this.InvokeRequired)
             {
@@ -297,7 +296,10 @@ namespace ITM_Agent.Panels
                 if (pluginType != null)
                 {
                     IPlugin plugin = (IPlugin)Activator.CreateInstance(pluginType);
-                    plugin.Initialize(_settingsManager, _logManager);
+
+                    // 수정된 부분: TimeSyncProvider.Instance를 세 번째 인자로 전달
+                    plugin.Initialize(_settingsManager, _logManager, ITM_Agent.Core.TimeSyncProvider.Instance);
+
                     plugin.Execute(filePath);
                 }
                 else
