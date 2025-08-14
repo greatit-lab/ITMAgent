@@ -109,10 +109,22 @@ namespace ITM_Agent.Core
                             timezone = EXCLUDED.timezone,
                             app_ver = EXCLUDED.app_ver,
                             reg_date = EXCLUDED.reg_date,
-                            servtime = NOW();";
+                            servtime = NOW()::timestamp(0);";
 
                     using (var cmd = new NpgsqlCommand(upsertSql, conn))
                     {
+                        // *** 수정된 부분: reg_date로 사용할 시간 값에서 밀리초 제거 ***
+                        // systemInfo.PcTime에서 년, 월, 일, 시, 분, 초 값만 사용하여
+                        // 밀리초가 0으로 설정된 새로운 DateTime 객체를 생성합니다.
+                        DateTime pcTimeWithoutMilliseconds = new DateTime(
+                            systemInfo.PcTime.Year,
+                            systemInfo.PcTime.Month,
+                            systemInfo.PcTime.Day,
+                            systemInfo.PcTime.Hour,
+                            systemInfo.PcTime.Minute,
+                            systemInfo.PcTime.Second
+                        );
+
                         cmd.Parameters.AddWithValue("@eqpid", eqpid);
                         cmd.Parameters.AddWithValue("@type", type);
                         cmd.Parameters.AddWithValue("@os", systemInfo.OsVersion);
@@ -121,7 +133,7 @@ namespace ITM_Agent.Core
                         cmd.Parameters.AddWithValue("@loc", systemInfo.Locale);
                         cmd.Parameters.AddWithValue("@tz", systemInfo.TimeZoneId);
                         cmd.Parameters.AddWithValue("@app_ver", _appVersion);
-                        cmd.Parameters.AddWithValue("@reg_date", systemInfo.PcTime);
+                        cmd.Parameters.AddWithValue("@reg_date", pcTimeWithoutMilliseconds);
 
                         int rowsAffected = cmd.ExecuteNonQuery();
                         _logManager.LogEvent($"[EqpidManager] Agent info uploaded to DB. (Rows affected: {rowsAffected})");
