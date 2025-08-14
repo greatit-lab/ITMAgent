@@ -1,19 +1,16 @@
 ﻿// ITM_Agent/Forms/MainForm.cs
 using ITM_Agent.Common.Interfaces;
 using ITM_Agent.Core;
-using ITM_Agent.Panels; // 네임스페이스 변경
+using ITM_Agent.Panels;
 using ITM_Agent.Startup;
 using System;
 using System.Drawing;
 using System.IO;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace ITM_Agent.Forms
 {
-    /// <summary>
-    /// 애플리케이션의 메인 UI 폼 클래스입니다.
-    /// 모든 UI 패널을 관리하고, 사용자의 입력을 받아 Core 서비스에 전달하는 역할을 합니다.
-    /// </summary>
     public partial class MainForm : Form
     {
         #region --- Services and Managers ---
@@ -57,7 +54,6 @@ namespace ITM_Agent.Forms
 
         #endregion
 
-        // Designer.cs에서 생성된 컨트롤들을 위한 기본 생성자
         public MainForm()
         {
             InitializeComponent();
@@ -70,7 +66,6 @@ namespace ITM_Agent.Forms
             FileWatcherManager fileWatcherManager,
             InfoRetentionCleaner infoCleaner)
         {
-            // --- 서비스 의존성 주입 ---
             _settingsManager = settingsManager;
             _logManager = logManager;
             _eqpidManager = eqpidManager;
@@ -100,6 +95,7 @@ namespace ITM_Agent.Forms
         private void InitializeUserControls()
         {
             _ucConfigPanel = new ucConfigurationPanel(_settingsManager);
+            _ucConfigPanel.SettingsChanged += RefreshUIState; // 이벤트 구독
             _ucPluginPanel = new ucPluginPanel(_settingsManager, _logManager);
             _ucOverrideNamesPanel = new ucOverrideNamesPanel(_settingsManager, _ucConfigPanel, _logManager);
             _ucImageTransPanel = new ucImageTransPanel(_settingsManager, _ucConfigPanel, _logManager);
@@ -109,27 +105,94 @@ namespace ITM_Agent.Forms
             _ucOptionPanel.DebugModeChanged += isDebug =>
             {
                 LogManager.GlobalDebugEnabled = isDebug;
-                // FileWatcherManager의 디버그 모드는 더 이상 직접 제어하지 않음 (LogManager 전역 설정 사용)
                 _logManager.LogEvent($"Debug Mode {(isDebug ? "Enabled" : "Disabled")}");
             };
         }
 
+        private void RefreshUIState()
+        {
+            if (this.InvokeRequired)
+            {
+                this.Invoke(new Action(RefreshUIState));
+                return;
+            }
+
+            // 1. 모든 자식 패널에 실행 상태 전파 (활성화/비활성화)
+            _ucConfigPanel.UpdateStatusOnRun(_isRunning);
+            _ucOverrideNamesPanel.UpdateStatusOnRun(_isRunning);
+            _ucImageTransPanel.UpdateStatusOnRun(_isRunning);
+            _ucUploadPanel.UpdateStatusOnRun(_isRunning);
+            _ucPluginPanel.UpdateStatusOnRun(_isRunning);
+            _ucOptionPanel.UpdateStatusOnRun(_isRunning);
+
+            // 2. MainForm의 컨트롤 상태 결정
+            if (_isRunning)
+            {
+                ts_Status.Text = "Running...";
+                ts_Status.ForeColor = Color.Blue;
+                btn_Run.Enabled = false;
+                btn_Stop.Enabled = true;
+            }
+            else
+            {
+                if (_ucConfigPanel.IsReadyToRun())
+                {
+                    ts_Status.Text = "Ready to Run";
+                    ts_Status.ForeColor = Color.Green;
+                    btn_Run.Enabled = true;
+                }
+                else
+                {
+                    ts_Status.Text = "Stopped";
+                    ts_Status.ForeColor = Color.Red;
+                    btn_Run.Enabled = false;
+                }
+                btn_Stop.Enabled = false;
+            }
+
+            btn_Quit.Enabled = !_isRunning;
+            UpdateTrayMenuStatus();
+            UpdateFileMenuItemsState(!_isRunning);
+        }
+
         #region --- UI Event Handlers (Buttons & Menus) ---
+
+        // *** 버그 수정: ucConfigurationPanel로부터 bool 상태를 직접 받는 이벤트 핸들러 ***
+        private void ConfigPanel_ReadyStatusChanged(bool isReady)
+        {
+            if (this.InvokeRequired)
+            {
+                this.Invoke(new Action<bool>(ConfigPanel_ReadyStatusChanged), isReady);
+                return;
+            }
+
+            // 실행 중이 아닐 때만 UI 상태를 갱신
+            if (!_isRunning)
+            {
+                btn_Run.Enabled = isReady;
+                ts_Status.Text = isReady ? "Ready to Run" : "Stopped";
+                ts_Status.ForeColor = isReady ? Color.Green : Color.Red;
+                UpdateTrayMenuStatus();
+            }
+        }
 
         private void btn_Run_Click(object sender, EventArgs e)
         {
             _logManager.LogEvent("Run button clicked.");
             try
             {
-                _isRunning = true;
+                _isRunning = true; // 1. 상태 플래그 변경
+                RefreshUIState();  // 2. UI 상태를 먼저 'Running'으로 갱신
+
+                // 3. 백그라운드 서비스 시작
                 _fileWatcherManager.StartWatching();
                 PerformanceDbWriter.Start(lb_eqpid.Text, _eqpidManager, _logManager);
-                UpdateMainStatus("Running...", Color.Blue);
             }
             catch (Exception ex)
             {
                 _logManager.LogError($"Error starting monitoring: {ex.Message}");
-                UpdateMainStatus("Error!", Color.Red);
+                _isRunning = false; // 에러 발생 시 상태 복원
+                RefreshUIState();
             }
         }
 
@@ -141,15 +204,17 @@ namespace ITM_Agent.Forms
             _logManager.LogEvent("Stop button clicked and confirmed.");
             try
             {
-                _isRunning = false;
+                _isRunning = false; // 1. 상태 플래그 변경
                 _fileWatcherManager.StopWatchers();
                 PerformanceDbWriter.Stop();
-                UpdateUIBasedOnSettings();
+                
+                // 2. *** 중요: 변경된 상태(_isRunning = false)를 기반으로 UI를 갱신 ***
+                RefreshUIState();
             }
             catch (Exception ex)
             {
                 _logManager.LogError($"Error stopping processes: {ex.Message}");
-                UpdateMainStatus("Error Stopping!", Color.Red);
+                RefreshUIState();
             }
         }
 
@@ -219,7 +284,6 @@ namespace ITM_Agent.Forms
                 aboutForm.ShowDialog(this);
             }
         }
-
         #endregion
 
         #region --- Core Application Logic & State Management ---
@@ -235,7 +299,6 @@ namespace ITM_Agent.Forms
             ts_Status.Text = status;
             ts_Status.ForeColor = color;
 
-            // 모든 UI 패널에 현재 실행 상태 전파
             _ucConfigPanel?.UpdateStatusOnRun(_isRunning);
             _ucOverrideNamesPanel?.UpdateStatusOnRun(_isRunning);
             _ucImageTransPanel?.UpdateStatusOnRun(_isRunning);
@@ -243,7 +306,7 @@ namespace ITM_Agent.Forms
             _ucPluginPanel?.UpdateStatusOnRun(_isRunning);
             _ucOptionPanel?.UpdateStatusOnRun(_isRunning);
 
-            // 버튼 및 메뉴 활성화 상태 업데이트
+            // 버튼 상태 업데이트
             btn_Run.Enabled = !_isRunning && _ucConfigPanel.IsReadyToRun();
             btn_Stop.Enabled = _isRunning;
             btn_Quit.Enabled = !_isRunning;
@@ -259,7 +322,8 @@ namespace ITM_Agent.Forms
 
             if (_isRunning) return;
 
-            if (_ucConfigPanel.IsReadyToRun())
+            // ucConfigurationPanel의 IsReadyToRun()을 직접 호출하여 상태 결정
+            if (_ucConfigPanel != null && _ucConfigPanel.IsReadyToRun())
             {
                 UpdateMainStatus("Ready to Run", Color.Green);
             }
@@ -276,10 +340,7 @@ namespace ITM_Agent.Forms
 
             _logManager.LogEvent("[MainForm] Quit requested.");
 
-            // --- 추가된 부분 ---
-            _ucUploadPanel?.CleanUp(); // ucUploadPanel의 리소스 정리
-                                       // -----------------
-
+            _ucUploadPanel?.CleanUp();
             _fileWatcherManager.StopWatchers();
             PerformanceDbWriter.Stop();
             _infoCleaner?.Dispose();
@@ -289,28 +350,42 @@ namespace ITM_Agent.Forms
             Application.Exit();
         }
 
-        private void MainForm_Load(object sender, EventArgs e)
+        private async void MainForm_Load(object sender, EventArgs e)
         {
-            PerformanceWarmUp.Run();
-            ShowUserControl(_ucConfigPanel); // 첫 화면으로 설정 패널 표시
+            // 1. UI를 먼저 보여주고, 상태를 '초기화 중'으로 설정
+            ShowUserControl(_ucConfigPanel);
+            ts_Status.Text = "Initializing...";
+            ts_Status.ForeColor = Color.Gray;
+            this.Update(); // UI 즉시 갱신
+
+            // 2. 시간이 오래 걸리는 작업들을 백그라운드에서 비동기적으로 실행
+            await Task.Run(() => PerformanceWarmUp.Run());
+
+            // 수정된 부분:
+            // 3. ucPluginPanel에서 비동기적으로 플러그인 '데이터만' 가져옵니다.
+            var loadedPlugins = await _ucPluginPanel.LoadPluginsAsync();
+
+            // 4. MainForm(UI 스레드)이 직접 ucPluginPanel의 UI를 업데이트하도록 지시합니다.
+            //    이 시점에는 모든 컨트롤의 핸들이 생성되어 있으므로 Invoke가 필요 없고 안전합니다.
+            _ucPluginPanel.SetLoadedPluginsAndUpdateUI(loadedPlugins);
+
+            // 5. 모든 초기화가 끝난 후, 최종 UI 상태 갱신
+            RefreshUIState();
+            _logManager.LogEvent("[MainForm] Application initialized and ready.");
         }
 
         #endregion
 
-        #region --- UI Helper Methods (생략되었던 부분) ---
+        #region --- UI Helper Methods ---
 
         private void RegisterMenuEvents()
         {
-            // Common 메뉴
             tsm_Categorize.Click += (s, e) => ShowUserControl(_ucConfigPanel);
             tsm_Option.Click += (s, e) => ShowUserControl(_ucOptionPanel);
-            // ONTO 메뉴
             tsm_OverrideNames.Click += (s, e) => ShowUserControl(_ucOverrideNamesPanel);
             tsm_ImageTrans.Click += (s, e) => ShowUserControl(_ucImageTransPanel);
             tsm_UploadData.Click += (s, e) => ShowUserControl(_ucUploadPanel);
-            // Plugin 메뉴
             tsm_PluginList.Click += (s, e) => ShowUserControl(_ucPluginPanel);
-            // About 메뉴
             tsm_AboutInfo.Click += tsm_AboutInfo_Click;
         }
 
