@@ -133,6 +133,18 @@ namespace ITM_Agent.Core
                                 // TimeSyncProvider를 통해 KST로 보정된 서버 시간 계산
                                 var serverTimestamp = TimeSyncProvider.Instance.ToSynchronizedKst(timestamp);
 
+                                // *** 수정된 부분: 'serv_ts' 값에서 밀리초를 제거합니다. ***
+                                // 보정된 KST 시간(serverTimestamp)을 기반으로 시/분/초까지만 포함된
+                                // 새로운 DateTime 객체를 생성하여 밀리초를 0으로 만듭니다.
+                                var serverTimestampWithoutMilliseconds = new DateTime(
+                                    serverTimestamp.Year,
+                                    serverTimestamp.Month,
+                                    serverTimestamp.Day,
+                                    serverTimestamp.Hour,
+                                    serverTimestamp.Minute,
+                                    serverTimestamp.Second
+                                );
+
                                 // CPU 사용량이 0보다 크지만 반올림 후 0이 되는 경우 0.01로 보정
                                 float cpuUsage = (float)Math.Round(metric.CpuUsage, 2);
                                 if (cpuUsage == 0.0f && metric.CpuUsage > 0.0f)
@@ -142,7 +154,7 @@ namespace ITM_Agent.Core
 
                                 cmd.Parameters.AddWithValue("@eqpid", _eqpid);
                                 cmd.Parameters.AddWithValue("@ts", timestamp);
-                                cmd.Parameters.AddWithValue("@serv_ts", serverTimestamp);
+                                cmd.Parameters.AddWithValue("@serv_ts", serverTimestampWithoutMilliseconds);
                                 cmd.Parameters.AddWithValue("@cpu", cpuUsage);
                                 cmd.Parameters.AddWithValue("@mem", (float)Math.Round(metric.MemoryUsage, 2));
 
