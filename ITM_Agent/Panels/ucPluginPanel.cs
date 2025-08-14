@@ -263,14 +263,14 @@ namespace ITM_Agent.Panels
         /// </summary>
         public async Task<List<PluginListItem>> LoadPluginsAsync()
         {
-            // 수정된 부분:
-            // Task.Run을 사용하여 백그라운드 스레드에서 파일 I/O 및 어셈블리 로딩을 수행하고,
-            // 그 결과인 List<PluginListItem>을 반환합니다.
             return await Task.Run(() =>
             {
-                var loadedPlugins = new List<PluginListItem>();
-                // [RegPlugins] 섹션은 실제로는 키-값 쌍이므로, GetRegexList를 사용하는 것이 맞습니다.
-                var pluginEntries = _settingsManager.GetRegexList();
+                var plugins = new List<PluginListItem>();
+
+                // *** 버그 수정: [RegPlugins] 섹션을 올바르게 읽도록 수정 ***
+                // 잘못된 GetRegexList() 호출 대신, 새로 추가한 GetSectionAsDictionary 메서드를 사용하여
+                // [RegPlugins] 섹션의 모든 "Key = Value" 라인을 정확하게 읽어옵니다.
+                var pluginEntries = _settingsManager.GetSectionAsDictionary("[RegPlugins]");
 
                 foreach (var entry in pluginEntries)
                 {
@@ -285,12 +285,20 @@ namespace ITM_Agent.Panels
                             byte[] dllBytes = File.ReadAllBytes(fullPath);
                             Assembly asm = Assembly.Load(dllBytes);
 
-                            loadedPlugins.Add(new PluginListItem
+                            // 실제 어셈블리 이름과 설정 파일의 키(플러그인 이름)가 일치하는지 확인
+                            if (asm.GetName().Name.Equals(pluginName, StringComparison.OrdinalIgnoreCase))
                             {
-                                PluginName = asm.GetName().Name,
-                                AssemblyPath = fullPath,
-                                PluginVersion = asm.GetName().Version.ToString()
-                            });
+                                plugins.Add(new PluginListItem
+                                {
+                                    PluginName = pluginName, // 설정 파일의 키를 이름으로 사용
+                                    AssemblyPath = fullPath,
+                                    PluginVersion = asm.GetName().Version.ToString()
+                                });
+                            }
+                            else
+                            {
+                                _logManager.LogError($"[ucPluginPanel] Plugin name mismatch. Key='{pluginName}', AssemblyName='{asm.GetName().Name}'. Skipping.");
+                            }
                         }
                         catch (Exception ex)
                         {
@@ -298,19 +306,25 @@ namespace ITM_Agent.Panels
                         }
                     }
                 }
-                return loadedPlugins;
+                return plugins;
             });
-            // UI를 업데이트하던 this.Invoke 구문은 여기서 완전히 제거됩니다.
         }
 
         public void SetLoadedPluginsAndUpdateUI(List<PluginListItem> plugins)
         {
-            // 1. 내부 데이터 목록을 외부에서 로드한 결과로 교체합니다.
+            // 1. MainForm으로부터 받은 플러그인 데이터로 내부 리스트를 갱신합니다.
             _loadedPlugins.Clear();
             _loadedPlugins.AddRange(plugins);
 
-            // 2. 내부 데이터를 기준으로 UI를 갱신합니다.
+            // 2. 갱신된 내부 리스트를 기준으로 UI 리스트박스를 업데이트합니다.
             UpdatePluginListDisplay();
+
+            // *** 버그 수정: 누락되었던 기능 복원 ***
+            // 3. UI 업데이트가 완료된 후, PluginsChanged 이벤트를 발생시켜
+            //    ucUploadPanel과 같은 다른 구독자(리스너)에게 플러그인 목록이
+            //    변경되었음을 명확하게 알립니다.
+            //    이 신호가 바로 ucUploadPanel이 자신의 콤보박스를 채우는 계기가 됩니다.
+            PluginsChanged?.Invoke(this, EventArgs.Empty);
         }
 
         #endregion
