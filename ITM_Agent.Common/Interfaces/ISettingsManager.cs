@@ -110,6 +110,12 @@ namespace ITM_Agent.Common.Interfaces
         /// </summary>
         void SetRegexList(Dictionary<string, string> regexDict);
 
+        /// <summary>
+        /// 특정 섹션의 모든 키-값 쌍을 Dictionary 형태로 반환합니다.
+        /// </summary>
+        /// <param name="sectionName">대괄호를 포함한 섹션 이름입니다. (예: "[RegPlugins]")</param>
+        Dictionary<string, string> GetSectionAsDictionary(string sectionName);
+
         #endregion
 
         #region --- File Management Methods ---
