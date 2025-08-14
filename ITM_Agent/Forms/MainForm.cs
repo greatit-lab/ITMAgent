@@ -354,22 +354,25 @@ namespace ITM_Agent.Forms
 
         private async void MainForm_Load(object sender, EventArgs e)
         {
-            // 1. UI를 먼저 보여주고, 상태를 '초기화 중'으로 설정
             ShowUserControl(_ucConfigPanel);
             ts_Status.Text = "Initializing...";
             ts_Status.ForeColor = Color.Gray;
-            this.Update(); // UI 즉시 갱신
+            this.Update();
 
-            // 2. 시간이 오래 걸리는 작업들을 백그라운드에서 비동기적으로 실행
+            // 1. 시간이 오래 걸리는 작업들을 백그라운드에서 비동기적으로 실행
             await Task.Run(() => PerformanceWarmUp.Run());
 
-            // 수정된 부분:
-            // 3. ucPluginPanel에서 비동기적으로 플러그인 '데이터만' 가져옵니다.
+            // 2. ucPluginPanel에서 비동기적으로 플러그인 '데이터만' 가져옵니다.
             var loadedPlugins = await _ucPluginPanel.LoadPluginsAsync();
 
-            // 4. MainForm(UI 스레드)이 직접 ucPluginPanel의 UI를 업데이트하도록 지시합니다.
-            //    이 시점에는 모든 컨트롤의 핸들이 생성되어 있으므로 Invoke가 필요 없고 안전합니다.
+            // 3. MainForm이 로드된 데이터를 ucPluginPanel에 전달하여 UI를 업데이트하도록 지시합니다.
+            //    이 메서드 내부에서 PluginsChanged 이벤트가 발생하여 ucUploadPanel에 신호를 보냅니다.
             _ucPluginPanel.SetLoadedPluginsAndUpdateUI(loadedPlugins);
+
+            // *** 버그 수정: 누락되었던 기능 복원 ***
+            // 4. ucUploadPanel의 플러그인 콤보박스가 모두 채워진 것을 보장한 후에,
+            //    Settings.ini에 저장된 업로드 설정을 로드하도록 명시적으로 호출합니다.
+            _ucUploadPanel.LoadAllSettings();
 
             // 5. 모든 초기화가 끝난 후, 최종 UI 상태 갱신
             RefreshUIState();
