@@ -157,7 +157,7 @@ namespace ITM_Agent.Forms
 
         #region --- UI Event Handlers (Buttons & Menus) ---
 
-        // *** 버그 수정: ucConfigurationPanel로부터 bool 상태를 직접 받는 이벤트 핸들러 ***
+        // *** 버그 수정: ucConfigurationPanel에서 보낸 상태 업데이트를 처리하는 이벤트 핸들러 ***
         private void ConfigPanel_ReadyStatusChanged(bool isReady)
         {
             if (this.InvokeRequired)
@@ -207,7 +207,7 @@ namespace ITM_Agent.Forms
                 _isRunning = false; // 1. 상태 플래그 변경
                 _fileWatcherManager.StopWatchers();
                 PerformanceDbWriter.Stop();
-                
+
                 // 2. *** 중요: 변경된 상태(_isRunning = false)를 기반으로 UI를 갱신 ***
                 RefreshUIState();
             }
