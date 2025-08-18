@@ -248,7 +248,9 @@ namespace ITM_Agent.Panels
         {
             if (!_isRunning) return;
 
-            int waitSec = int.Parse(cb_WaitTime.SelectedItem.ToString());
+            int waitSec = GetWaitSecondsSafely();
+            if (waitSec <= 0) return;
+
             var now = DateTime.Now;
             var filesToProcess = new List<string>();
 
@@ -273,13 +275,112 @@ namespace ITM_Agent.Panels
             }
 
             var groupedFiles = filesToProcess
-                .Select(p => new { Path = p, BaseName = Regex.Match(Path.GetFileNameWithoutExtension(p), @"^(?<base>.+?)_(?<page>\d+)$").Groups["base"].Value })
+                .Select(p => new {
+                    FullPath = p,
+                    BaseName = Regex.Match(Path.GetFileNameWithoutExtension(p), @"^(?<base>.+?)_(?<page>\d+)$").Groups["base"].Value
+                })
                 .Where(x => !string.IsNullOrEmpty(x.BaseName))
                 .GroupBy(x => x.BaseName);
 
             foreach (var group in groupedFiles)
             {
-                MergeImageGroup(group.Key);
+                MergeImagesForBaseName(group.Key);
+            }
+        }
+
+        /// <summary>
+        /// 크로스 스레드 오류를 방지하며 안전하게 cb_WaitTime 컨트롤의 선택된 값을 초 단위로 반환합니다.
+        /// </summary>
+        private int GetWaitSecondsSafely()
+        {
+            // *** 수정된 부분: 크로스 스레드 오류를 해결하는 핵심 로직입니다. ***
+            // 현재 스레드가 UI 스레드가 아닌지 (InvokeRequired) 확인합니다.
+            if (this.InvokeRequired)
+            {
+                // UI 스레드가 아니라면, Invoke를 통해 UI 스레드에 작업을 위임하고
+                // 그 결과(대기 시간 값)를 안전하게 반환받습니다.
+                return (int)this.Invoke((Func<int>)GetWaitSecondsSafely);
+            }
+            else
+            {
+                // 이미 UI 스레드라면, 컨트롤에 직접 안전하게 접근합니다.
+                if (cb_WaitTime.SelectedItem is string selectedValue && int.TryParse(selectedValue, out int seconds))
+                {
+                    return seconds;
+                }
+
+                // UI에서 값을 가져오지 못한 경우, 설정 파일에서 값을 읽어옵니다.
+                if (int.TryParse(_settingsManager.GetValueFromSection("ImageTrans", "Wait"), out int settingSeconds))
+                {
+                    return settingSeconds;
+                }
+
+                // 모든 경우에 실패하면 기본값 30초를 반환합니다.
+                return 30;
+            }
+        }
+
+        /// <summary>
+        /// 동일한 BaseName을 가진 이미지 파일 그룹을 찾아 PDF로 병합합니다.
+        /// </summary>
+        /// <param name="baseName">파일 이름에서 페이지 번호를 제외한 공통 부분입니다.</param>
+        private void MergeImagesForBaseName(string baseName)
+        {
+            // *** 수정된 부분: 누락되었던 메서드 전체를 추가합니다. ***
+
+            // 1. 중복 병합 방지: 이미 이 baseName으로 병합을 시도했다면 건너뜁니다.
+            lock (_mergedBaseNames)
+            {
+                if (_mergedBaseNames.Contains(baseName))
+                {
+                    _logManager.LogDebug($"[ucImageTransPanel] Skip duplicate merge attempt for baseName: {baseName}");
+                    return;
+                }
+                _mergedBaseNames.Add(baseName);
+            }
+
+            // 2. 병합에 필요한 정보(감시 폴더, 출력 폴더 등)를 설정에서 가져옵니다.
+            string watchFolder = _settingsManager.GetValueFromSection("ImageTrans", "Target");
+            string outputFolder = _settingsManager.GetValueFromSection("ImageTrans", "SaveFolder");
+            if (string.IsNullOrEmpty(outputFolder) || !Directory.Exists(outputFolder))
+            {
+                outputFolder = watchFolder; // 출력 폴더가 없으면 감시 폴더를 사용
+            }
+
+            // 파일 이름에 포함될 수 있는 '.' 문자를 '_'로 치환하여 안전한 파일명 생성
+            string safeBaseName = baseName.Replace('.', '_');
+            string outputPdfPath = Path.Combine(outputFolder, $"{safeBaseName}.pdf");
+
+            try
+            {
+                // 3. 지원하는 이미지 확장자 목록을 정의합니다.
+                var imageExtensions = new[] { ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp" };
+
+                // 4. 감시 폴더에서 baseName을 포함하는 모든 이미지 파일을 찾아서 페이지 번호순으로 정렬합니다.
+                var imageList = Directory.GetFiles(watchFolder, $"{baseName}_*.*")
+                    .Where(p => imageExtensions.Contains(Path.GetExtension(p).ToLowerInvariant()))
+                    .Select(p => {
+                        var match = Regex.Match(Path.GetFileNameWithoutExtension(p), @"_(?<page>\d+)$");
+                        return new {
+                            Path = p,
+                            IsMatch = match.Success,
+                            Page = match.Success ? int.Parse(match.Groups["page"].Value) : -1
+                        };
+                    })
+                    .Where(x => x.IsMatch)
+                    .OrderBy(x => x.Page)
+                    .Select(x => x.Path)
+                    .ToList();
+
+                // 5. 병합할 이미지가 있는 경우, PdfMergeManager에 작업을 위임합니다.
+                if (imageList.Count > 0)
+                {
+                    _pdfMergeManager.MergeImagesToPdf(imageList, outputPdfPath);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logManager.LogError($"[ucImageTransPanel] PDF merge failed for baseName '{baseName}': {ex.Message}");
             }
         }
 
