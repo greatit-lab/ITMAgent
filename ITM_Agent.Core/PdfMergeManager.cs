@@ -54,11 +54,6 @@ namespace ITM_Agent.Core
             _logManager.LogEvent($"[PdfMergeManager] Output folder updated to: {outputFolder}");
         }
 
-        /// <summary>
-        /// 지정된 경로의 이미지 목록을 하나의 PDF 파일로 병합합니다.
-        /// </summary>
-        /// <param name="imagePaths">병합할 이미지 파일 경로의 목록입니다.</param>
-        /// <param name="outputPdfPath">생성될 PDF 파일의 전체 경로입니다.</param>
         public void MergeImagesToPdf(List<string> imagePaths, string outputPdfPath)
         {
             if (imagePaths == null || imagePaths.Count == 0)
@@ -91,7 +86,7 @@ namespace ITM_Agent.Core
                         {
                             byte[] imgBytes = IO.File.ReadAllBytes(imgPath);
                             var imgData = ImageDataFactory.Create(imgBytes);
-                            var img = new iTextImage(imgData); // 명시적으로 iText의 Image 사용
+                            var img = new iTextImage(imgData);
                             float w = img.GetImageWidth();
                             float h = img.GetImageHeight();
 
@@ -111,9 +106,10 @@ namespace ITM_Agent.Core
                         }
                         catch (Exception exImg)
                         {
-                            _logManager.LogError($"[PdfMergeManager] Error adding image '{imgPath}': {exImg.Message}");
+                            _logManager.LogError($"[PdfMergeManager] Error adding image '{imgPath}': {exImg.Message} | InnerException: {exImg.InnerException?.Message}");
                         }
                     }
+                    document.Close();
                 }
 
                 _logManager.LogEvent("[PdfMergeManager] PDF creation complete. Starting image file deletion.");
@@ -121,7 +117,7 @@ namespace ITM_Agent.Core
             }
             catch (Exception ex)
             {
-                _logManager.LogError($"[PdfMergeManager] A critical error occurred during PDF merge: {ex.Message}");
+                _logManager.LogError($"[PdfMergeManager] A critical error occurred during PDF merge: {ex.Message} | InnerException: {ex.InnerException?.Message}");
                 throw;
             }
         }
