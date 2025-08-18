@@ -66,6 +66,9 @@ namespace ITM_Agent.Core
                         NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.CreationTime
                     };
 
+                    // 버퍼 크기를 64KB(최대값)로 늘려 버퍼 오버플로를 방지합니다.
+                    watcher.InternalBufferSize = 65536;
+
                     watcher.Created += OnFileEvent;
                     watcher.Changed += OnFileEvent;
                     watcher.Deleted += OnFileEvent;
