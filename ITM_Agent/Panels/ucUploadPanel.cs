@@ -57,7 +57,7 @@ namespace ITM_Agent.Panels
 
         private void RegisterEventHandlers()
         {
-            _pluginPanel.PluginsChanged += (s, e) => LoadPluginItems();
+            _pluginPanel.PluginsChanged += OnPluginsChanged;
 
             btn_FlatSet.Click += (s, e) => SaveAndApplySetting("WaferFlat", cb_WaferFlat_Path, cb_FlatPlugin);
             btn_FlatClear.Click += (s, e) => ClearSetting("WaferFlat", cb_WaferFlat_Path, cb_FlatPlugin);
@@ -230,6 +230,13 @@ namespace ITM_Agent.Panels
 
         private void OnFileDetected(string key, string filePath)
         {
+            // 컨트롤이 아직 화면에 준비되지 않았거나, 
+            // 삭제되는 중이면 UI 접근을 시도하지 않고 즉시 종료합니다.
+            if (this.IsDisposed || !this.IsHandleCreated)
+            {
+                return;
+            }
+
             if (Directory.Exists(filePath)) return;
 
             string pluginName = "";
@@ -324,6 +331,41 @@ namespace ITM_Agent.Panels
 
         #region --- Public Control & CleanUp ---
 
+        public void ProcessFileImmediately(string filePath, string dataTypeKey)
+        {
+            if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath))
+            {
+                _logManager.LogDebug($"[ucUploadPanel] ProcessFileImmediately called with invalid path: {filePath}");
+                return;
+            }
+
+            string pluginName = "";
+            // UI 스레드에서 컨트롤 값을 안전하게 가져옵니다.
+            this.Invoke((MethodInvoker)delegate
+            {
+                switch (dataTypeKey)
+                {
+                    case "WaferFlat":
+                        pluginName = cb_FlatPlugin.Text;
+                        break;
+                    case "PreAlign":
+                        pluginName = cb_PreAlignPlugin.Text;
+                        break;
+                    // 필요 시 다른 데이터 타입에 대한 케이스 추가
+                }
+            });
+
+            if (!string.IsNullOrEmpty(pluginName))
+            {
+                _uploadQueue.Enqueue(new FileProcessItem(filePath, pluginName));
+                _logManager.LogEvent($"[ucUploadPanel] Immediately processing requested for: {Path.GetFileName(filePath)} with plugin {pluginName}");
+            }
+            else
+            {
+                _logManager.LogError($"[ucUploadPanel] Could not find a plugin configured for data type key: {dataTypeKey}");
+            }
+        }
+
         public void UpdateStatusOnRun(bool isRunning)
         {
             SetControlsEnabled(!isRunning);
@@ -372,5 +414,31 @@ namespace ITM_Agent.Panels
         }
 
         #endregion
+
+        private void OnPluginsChanged(object sender, EventArgs e)
+        {
+            // 1. 플러그인 콤보박스의 아이템 목록을 최신 상태로 새로고침합니다.
+            LoadPluginItems();
+
+            // 2. 각 설정 항목을 검사하여, 만약 설정된 플러그인이 삭제되었다면 해당 설정을 초기화합니다.
+            CheckAndClearInvalidPluginSetting("WaferFlat", cb_WaferFlat_Path, cb_FlatPlugin);
+            CheckAndClearInvalidPluginSetting("PreAlign", cb_PreAlign_Path, cb_PreAlignPlugin);
+            CheckAndClearInvalidPluginSetting("Error", cb_ErrPath, cb_ErrPlugin);
+            CheckAndClearInvalidPluginSetting("Image", cb_ImgPath, cb_ImagePlugin);
+            CheckAndClearInvalidPluginSetting("Event", cb_EvPath, cb_EvPlugin);
+            CheckAndClearInvalidPluginSetting("Wave", cb_WavePath, cb_WavePlugin);
+        }
+
+        private void CheckAndClearInvalidPluginSetting(string key, ComboBox comboPath, ComboBox comboPlugin)
+        {
+            // 콤보박스에 텍스트가 있지만, 해당 텍스트가 아이템 목록에 더 이상 존재하지 않는 경우
+            if (!string.IsNullOrEmpty(comboPlugin.Text) && !comboPlugin.Items.Contains(comboPlugin.Text))
+            {
+                // 선택되었던 플러그인이 삭제된 것이므로, 이 설정을 초기화합니다.
+                string removedPluginName = comboPlugin.Text;
+                ClearSetting(key, comboPath, comboPlugin);
+                _logManager.LogEvent($"[ucUploadPanel] Setting for '{key}' was cleared because plugin '{removedPluginName}' was removed.");
+            }
+        }
     }
 }
