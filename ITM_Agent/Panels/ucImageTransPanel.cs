@@ -361,7 +361,8 @@ namespace ITM_Agent.Panels
                     .Where(p => imageExtensions.Contains(Path.GetExtension(p).ToLowerInvariant()))
                     .Select(p => {
                         var match = Regex.Match(Path.GetFileNameWithoutExtension(p), @"_(?<page>\d+)$");
-                        return new {
+                        return new
+                        {
                             Path = p,
                             IsMatch = match.Success,
                             Page = match.Success ? int.Parse(match.Groups["page"].Value) : -1
