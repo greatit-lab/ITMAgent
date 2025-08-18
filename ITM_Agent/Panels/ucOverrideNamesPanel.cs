@@ -1,6 +1,7 @@
 ﻿// ITM_Agent/Panels/ucOverrideNamesPanel.cs
 using ITM_Agent.Common.Interfaces;
-using ITM_Agent.Forms; // RegexConfigForm 사용을 위해 추가
+using ITM_Agent.Forms;
+using ITM_Agent.Panels;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -22,6 +23,7 @@ namespace ITM_Agent.Panels
         private readonly ISettingsManager _settingsManager;
         private readonly ucConfigurationPanel _configPanel;
         private readonly ILogManager _logManager;
+        private ucUploadPanel _ucUploadPanel;
 
         private FileSystemWatcher _baseDateFolderWatcher;
         private FileSystemWatcher _baselineFolderWatcher;
@@ -47,6 +49,18 @@ namespace ITM_Agent.Panels
             InitializeComponent();
             RegisterEventHandlers();
             LoadAllSettings();
+        }
+
+        // MainForm에서 UploadPanel의 참조를 설정하기 위한 public 메서드
+        public void LinkUploadPanel(ucUploadPanel uploadPanel)
+        {
+            _ucUploadPanel = uploadPanel ?? throw new ArgumentNullException(nameof(uploadPanel));
+        }
+
+        public void SetUploadPanel(ucUploadPanel uploadPanel)
+        {
+            // 이제 readonly가 아니므로 할당 가능
+            _ucUploadPanel = uploadPanel ?? throw new ArgumentNullException(nameof(uploadPanel));
         }
 
         private void RegisterEventHandlers()
@@ -293,27 +307,38 @@ namespace ITM_Agent.Panels
             var baselineData = ExtractBaselineData(new[] { e.FullPath });
             if (baselineData.Count == 0) return;
 
-            foreach (string targetFolder in lb_TargetComparePath.Items)
+            var targetFolders = _settingsManager.GetFoldersFromSection("[TargetComparePath]");
+            foreach (string targetFolder in targetFolders)
             {
                 if (Directory.Exists(targetFolder))
                 {
-                    RenameFilesInTargetFolder(targetFolder, baselineData);
+                    RenameAndProcessFilesInTargetFolder(targetFolder, baselineData);
                 }
             }
         }
 
-        private void RenameFilesInTargetFolder(string folder, Dictionary<string, (string TimeInfo, string Prefix, string CInfo)> baselineData)
+        private void RenameAndProcessFilesInTargetFolder(string folder, Dictionary<string, (string TimeInfo, string Prefix, string CInfo)> baselineData)
         {
             try
             {
                 foreach (var targetFile in Directory.GetFiles(folder))
                 {
-                    TryRenameTargetFile(targetFile, baselineData);
+                    string renamedFilePath = TryRenameTargetFile(targetFile, baselineData);
+
+                    if (!string.IsNullOrEmpty(renamedFilePath))
+                    {
+                        // Wafer Flat 데이터 파일 패턴(_WF_)을 포함하는지 확인
+                        if (renamedFilePath.ToUpper().Contains("_WF_"))
+                        {
+                            // ucUploadPanel에 즉시 처리를 요청
+                            _ucUploadPanel?.ProcessFileImmediately(renamedFilePath, "WaferFlat");
+                        }
+                    }
                 }
             }
             catch (Exception ex)
             {
-                _logManager.LogError($"[OverrideNames] Error during renaming in folder {folder}: {ex.Message}");
+                _logManager.LogError($"[OverrideNames] Error during renaming and processing in folder {folder}: {ex.Message}");
             }
         }
         #endregion
@@ -503,7 +528,8 @@ namespace ITM_Agent.Panels
 
             foreach (var data in baselineData.Values)
             {
-                if (fileName.Contains(data.Prefix) && fileName.Contains("_#1_")) // 원본 패턴 확인
+                // ★★★★★ 조치 사항: 누락된 'data.TimeInfo' 비교 조건 추가 ★★★★★
+                if (fileName.Contains(data.TimeInfo) && fileName.Contains(data.Prefix) && fileName.Contains("_#1_"))
                 {
                     string newName = fileName.Replace("_#1_", $"_{data.CInfo}_");
                     string newPath = Path.Combine(Path.GetDirectoryName(targetFile), newName);
