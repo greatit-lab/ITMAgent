@@ -94,16 +94,27 @@ namespace ITM_Agent.Forms
 
         private void InitializeUserControls()
         {
+            // 순서에 상관없는 패널들
             _ucConfigPanel = new ucConfigurationPanel(_settingsManager);
             _ucConfigPanel.SettingsChanged += RefreshUIState;
             _ucPluginPanel = new ucPluginPanel(_settingsManager, _logManager);
-            _ucOverrideNamesPanel = new ucOverrideNamesPanel(_settingsManager, _ucConfigPanel, _logManager);
-            _ucImageTransPanel = new ucImageTransPanel(_settingsManager, _ucConfigPanel, _logManager);
-            _ucUploadPanel = new ucUploadPanel(_ucConfigPanel, _ucPluginPanel, _settingsManager, _ucOverrideNamesPanel, _logManager);
             _ucOptionPanel = new ucOptionPanel(_settingsManager);
 
-            _ucPluginPanel.PluginsChanged += (sender, args) => _ucUploadPanel.LoadPluginItems();
+            // ★★★★★ 조치 사항: 생성 순서 및 참조 연결 ★★★★★
+            // 1. 의존성이 없는 _ucOverrideNamesPanel을 먼저 생성
+            _ucOverrideNamesPanel = new ucOverrideNamesPanel(_settingsManager, _ucConfigPanel, _logManager);
 
+            // 2. _ucOverrideNamesPanel을 필요로 하는 _ucUploadPanel 생성
+            _ucUploadPanel = new ucUploadPanel(_ucConfigPanel, _ucPluginPanel, _settingsManager, _ucOverrideNamesPanel, _logManager);
+
+            // 3. _ucOverrideNamesPanel이 _ucUploadPanel을 호출할 수 있도록 참조 연결
+            _ucOverrideNamesPanel.LinkUploadPanel(_ucUploadPanel);
+
+            // 나머지 패널 생성
+            _ucImageTransPanel = new ucImageTransPanel(_settingsManager, _ucConfigPanel, _logManager);
+
+            // 이벤트 연결
+            _ucPluginPanel.PluginsChanged += (sender, args) => _ucUploadPanel.LoadPluginItems();
             _ucOptionPanel.DebugModeChanged += isDebug =>
             {
                 LogManager.GlobalDebugEnabled = isDebug;
