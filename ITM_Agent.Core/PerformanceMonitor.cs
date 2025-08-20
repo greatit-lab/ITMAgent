@@ -332,9 +332,9 @@ namespace ITM_Agent.Core
                     OnBackToNormal?.Invoke();
                 }
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
-                 Console.WriteLine($"[ERROR] PdhSampler - Failed to sample performance data: {ex.Message}");
+                Console.WriteLine($"[ERROR] PdhSampler - Failed to sample performance data: {ex.Message}");
             }
         }
 
