@@ -1,4 +1,4 @@
-﻿// ITM_Agent/Panels/ucUploadPanel.cs
+// ITM_Agent/Panels/ucUploadPanel.cs
 using ITM_Agent.Common.DTOs;
 using ITM_Agent.Common.Interfaces;
 using System;
@@ -14,9 +14,8 @@ using System.Windows.Forms;
 
 namespace ITM_Agent.Panels
 {
-    public partial class ucUploadPanel : UserControl // IDisposable은 UserControl에 이미 구현되어 있음
+    public partial class ucUploadPanel : UserControl
     {
-        // ... (이전과 동일한 모든 필드, 생성자, 이벤트 핸들러, 메서드) ...
         #region --- Services and Fields ---
 
         private readonly ucConfigurationPanel _configPanel;
@@ -50,8 +49,8 @@ namespace ITM_Agent.Panels
 
             InitializeComponent();
             RegisterEventHandlers();
-            LoadAllSettings();
-
+            
+            _logManager.LogDebug("[ucUploadPanel] Starting background upload queue processing task.");
             Task.Run(() => ProcessUploadQueueAsync(_cts.Token));
         }
 
@@ -80,11 +79,11 @@ namespace ITM_Agent.Panels
 
         #endregion
 
-        // ... (LoadAllSettings, LoadTargetFolderItems, LoadPluginItems 등 이전과 동일한 메서드들) ...
         #region --- Settings Loading & UI Refresh ---
 
         public void LoadAllSettings()
         {
+            _logManager.LogDebug("[ucUploadPanel] Loading all upload settings.");
             LoadTargetFolderItems();
 
             LoadSetting("WaferFlat", cb_WaferFlat_Path, cb_FlatPlugin);
@@ -93,10 +92,12 @@ namespace ITM_Agent.Panels
             LoadSetting("Image", cb_ImgPath, cb_ImagePlugin);
             LoadSetting("Event", cb_EvPath, cb_EvPlugin);
             LoadSetting("Wave", cb_WavePath, cb_WavePlugin);
+            _logManager.LogDebug("[ucUploadPanel] Finished loading all upload settings.");
         }
 
         private void LoadTargetFolderItems()
         {
+             _logManager.LogDebug("[ucUploadPanel] Refreshing target folder items in dropdowns.");
             var targetFolders = _configPanel.GetRegexTargetFolders();
             var allCombos = new[] { cb_WaferFlat_Path, cb_PreAlign_Path, cb_ErrPath, cb_ImgPath, cb_EvPath, cb_WavePath };
 
@@ -119,7 +120,7 @@ namespace ITM_Agent.Panels
                 this.Invoke((MethodInvoker)LoadPluginItems);
                 return;
             }
-
+             _logManager.LogDebug("[ucUploadPanel] Refreshing plugin items in dropdowns.");
             var pluginNames = _pluginPanel.GetLoadedPlugins().Select(p => p.PluginName).ToArray();
             var allCombos = new[] { cb_FlatPlugin, cb_PreAlignPlugin, cb_ErrPlugin, cb_ImagePlugin, cb_EvPlugin, cb_WavePlugin };
 
@@ -141,6 +142,7 @@ namespace ITM_Agent.Panels
 
         private void SaveAndApplySetting(string key, ComboBox comboPath, ComboBox comboPlugin)
         {
+            _logManager.LogEvent($"[ucUploadPanel] 'Set' button clicked for '{key}'.");
             string folder = comboPath.Text.Trim();
             string plugin = comboPlugin.Text.Trim();
 
@@ -151,6 +153,7 @@ namespace ITM_Agent.Panels
             }
             if (!Directory.Exists(folder))
             {
+                 _logManager.LogError($"[ucUploadPanel] Save failed for '{key}': Folder '{folder}' does not exist.");
                 MessageBox.Show("선택한 폴더가 존재하지 않습니다.", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
@@ -160,10 +163,12 @@ namespace ITM_Agent.Panels
 
             StartWatcher(key, folder);
             MessageBox.Show($"{key} 설정이 저장 및 적용되었습니다.", "완료", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            _logManager.LogEvent($"[ucUploadPanel] Setting for '{key}' saved. Watching folder '{folder}' with plugin '{plugin}'.");
         }
 
         private void ClearSetting(string key, ComboBox comboPath, ComboBox comboPlugin)
         {
+            _logManager.LogEvent($"[ucUploadPanel] 'Clear' button clicked for '{key}'.");
             comboPath.SelectedIndex = -1;
             comboPath.Text = "";
             comboPlugin.SelectedIndex = -1;
@@ -172,12 +177,18 @@ namespace ITM_Agent.Panels
             _settingsManager.RemoveKeyFromSection(UploadSection, key);
             StopWatcher(key);
             MessageBox.Show($"{key} 설정이 초기화되었습니다.", "초기화 완료", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            _logManager.LogEvent($"[ucUploadPanel] Setting for '{key}' cleared.");
         }
 
         private void LoadSetting(string key, ComboBox comboPath, ComboBox comboPlugin)
         {
+             _logManager.LogDebug($"[ucUploadPanel] Loading setting for '{key}'.");
             string settingValue = _settingsManager.GetValueFromSection(UploadSection, key);
-            if (string.IsNullOrEmpty(settingValue)) return;
+            if (string.IsNullOrEmpty(settingValue))
+            {
+                _logManager.LogDebug($"[ucUploadPanel] No setting found for '{key}'.");
+                return;
+            }
 
             var folderMatch = Regex.Match(settingValue, @"Folder\s*:\s*(.*?)(,|$)");
             var pluginMatch = Regex.Match(settingValue, @"Plugin\s*:\s*(.*)");
@@ -186,31 +197,40 @@ namespace ITM_Agent.Panels
             {
                 string folder = folderMatch.Groups[1].Value.Trim();
                 string plugin = pluginMatch.Groups[1].Value.Trim();
+                
+                _logManager.LogDebug($"[ucUploadPanel] Found setting for '{key}': Folder='{folder}', Plugin='{plugin}'.");
 
                 comboPath.SelectedItem = folder;
                 comboPlugin.SelectedItem = plugin;
-
-                if (Directory.Exists(folder))
-                {
-                    StartWatcher(key, folder);
-                }
+            }
+            else
+            {
+                _logManager.LogError($"[ucUploadPanel] Failed to parse setting for '{key}'. Value: '{settingValue}'");
             }
         }
 
         private void StartWatcher(string key, string path)
         {
-            StopWatcher(key);
+            StopWatcher(key); // 기존 감시자 정리
 
-            var watcher = new FileSystemWatcher(path)
+            _logManager.LogDebug($"[ucUploadPanel] Starting watcher for key '{key}' on path: {path}");
+            try
             {
-                NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.CreationTime,
-                EnableRaisingEvents = true
-            };
-            watcher.Created += (s, e) => OnFileDetected(key, e.FullPath);
-            watcher.Changed += (s, e) => OnFileDetected(key, e.FullPath);
+                var watcher = new FileSystemWatcher(path)
+                {
+                    NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.CreationTime,
+                    EnableRaisingEvents = true
+                };
+                watcher.Created += (s, e) => OnFileDetected(key, e.FullPath);
+                watcher.Changed += (s, e) => OnFileDetected(key, e.FullPath);
 
-            _watchers[key] = watcher;
-            _logManager.LogEvent($"[ucUploadPanel] Watcher started for '{key}' on path: {path}");
+                _watchers[key] = watcher;
+                _logManager.LogEvent($"[ucUploadPanel] Watcher started for '{key}' on path: {path}");
+            }
+            catch (Exception ex)
+            {
+                _logManager.LogError($"[ucUploadPanel] Failed to start watcher for key '{key}' on path '{path}': {ex.Message}");
+            }
         }
 
         private void StopWatcher(string key)
@@ -230,42 +250,57 @@ namespace ITM_Agent.Panels
 
         private void OnFileDetected(string key, string filePath)
         {
-            // 컨트롤이 아직 화면에 준비되지 않았거나, 
-            // 삭제되는 중이면 UI 접근을 시도하지 않고 즉시 종료합니다.
-            if (this.IsDisposed || !this.IsHandleCreated)
+            if (this.IsDisposed || !this.IsHandleCreated) return;
+            if (Directory.Exists(filePath))
             {
+                _logManager.LogDebug($"[ucUploadPanel] Directory event ignored: {filePath}");
                 return;
             }
 
-            if (Directory.Exists(filePath)) return;
+            _logManager.LogDebug($"[ucUploadPanel] File event detected for key '{key}': {filePath}");
 
             string pluginName = "";
-            this.Invoke((MethodInvoker)delegate
+            try
             {
-                if (key == "WaferFlat") pluginName = cb_FlatPlugin.Text;
-                else if (key == "PreAlign") pluginName = cb_PreAlignPlugin.Text;
-                else if (key == "Error") pluginName = cb_ErrPlugin.Text;
-                else if (key == "Image") pluginName = cb_ImagePlugin.Text;
-                else if (key == "Event") pluginName = cb_EvPlugin.Text;
-                else if (key == "Wave") pluginName = cb_WavePlugin.Text;
-            });
+                this.Invoke((MethodInvoker)delegate
+                {
+                    if (key == "WaferFlat") pluginName = cb_FlatPlugin.Text;
+                    else if (key == "PreAlign") pluginName = cb_PreAlignPlugin.Text;
+                    else if (key == "Error") pluginName = cb_ErrPlugin.Text;
+                    else if (key == "Image") pluginName = cb_ImagePlugin.Text;
+                    else if (key == "Event") pluginName = cb_EvPlugin.Text;
+                    else if (key == "Wave") pluginName = cb_WavePlugin.Text;
+                });
+            }
+            catch(Exception ex)
+            {
+                _logManager.LogError($"[ucUploadPanel] Error getting plugin name from UI thread for key '{key}': {ex.Message}");
+                return;
+            }
 
             if (!string.IsNullOrEmpty(pluginName))
             {
                 _uploadQueue.Enqueue(new FileProcessItem(filePath, pluginName));
-                _logManager.LogDebug($"[ucUploadPanel] File enqueued for processing: {Path.GetFileName(filePath)} with plugin {pluginName}");
+                _logManager.LogDebug($"[ucUploadPanel] File enqueued for processing: '{Path.GetFileName(filePath)}' with plugin '{pluginName}'");
+            }
+            else
+            {
+                _logManager.LogDebug($"[ucUploadPanel] No plugin configured for key '{key}', file '{Path.GetFileName(filePath)}' will be ignored.");
             }
         }
 
         private async Task ProcessUploadQueueAsync(CancellationToken token)
         {
+            _logManager.LogDebug("[ucUploadPanel] Background processing queue started.");
             while (!token.IsCancellationRequested)
             {
                 if (_uploadQueue.TryDequeue(out FileProcessItem item))
                 {
+                    _logManager.LogDebug($"[ucUploadPanel] Dequeued file: '{item.FilePath}', Plugin: '{item.PluginName}'");
                     try
                     {
                         string finalPath = _overridePanel.EnsureOverrideAndReturnPath(item.FilePath);
+                        _logManager.LogDebug($"[ucUploadPanel] Final path after override check: '{finalPath}'");
 
                         var pluginInfo = _pluginPanel.GetLoadedPlugins()
                             .FirstOrDefault(p => p.PluginName.Equals(item.PluginName, StringComparison.OrdinalIgnoreCase));
@@ -277,12 +312,12 @@ namespace ITM_Agent.Panels
                         }
                         else
                         {
-                            _logManager.LogError($"[ucUploadPanel] Plugin '{item.PluginName}' not found or DLL is missing.");
+                            _logManager.LogError($"[ucUploadPanel] Plugin '{item.PluginName}' not found or its DLL file is missing. Path: {pluginInfo?.AssemblyPath}");
                         }
                     }
                     catch (Exception ex)
                     {
-                        _logManager.LogError($"[ucUploadPanel] Error processing file {item.FilePath}: {ex.Message}");
+                        _logManager.LogError($"[ucUploadPanel] Error processing file '{item.FilePath}' in queue: {ex.Message}");
                     }
                 }
                 else
@@ -290,24 +325,31 @@ namespace ITM_Agent.Panels
                     await Task.Delay(200, token);
                 }
             }
+            _logManager.LogDebug("[ucUploadPanel] Background processing queue stopped.");
         }
 
         private void ExecutePlugin(string assemblyPath, string filePath)
         {
             try
             {
+                _logManager.LogDebug($"[ucUploadPanel] Loading assembly from path: {assemblyPath}");
                 byte[] dllBytes = File.ReadAllBytes(assemblyPath);
                 Assembly asm = Assembly.Load(dllBytes);
+
+                _logManager.LogDebug($"[ucUploadPanel] Searching for a type that implements IPlugin in '{asm.FullName}'.");
                 var pluginType = asm.GetTypes().FirstOrDefault(t => typeof(IPlugin).IsAssignableFrom(t) && !t.IsInterface);
 
                 if (pluginType != null)
                 {
+                    _logManager.LogDebug($"[ucUploadPanel] Found plugin type: {pluginType.FullName}. Creating instance.");
                     IPlugin plugin = (IPlugin)Activator.CreateInstance(pluginType);
 
-                    // 수정된 부분: TimeSyncProvider.Instance를 세 번째 인자로 전달
+                    _logManager.LogDebug($"[ucUploadPanel] Initializing plugin '{plugin.Name}'.");
                     plugin.Initialize(_settingsManager, _logManager, ITM_Agent.Core.TimeSyncProvider.Instance);
 
+                    _logManager.LogDebug($"[ucUploadPanel] Executing plugin with file: {filePath}");
                     plugin.Execute(filePath);
+                    _logManager.LogDebug($"[ucUploadPanel] Plugin execution completed for: {filePath}");
                 }
                 else
                 {
@@ -316,7 +358,7 @@ namespace ITM_Agent.Panels
             }
             catch (Exception ex)
             {
-                _logManager.LogError($"[ucUploadPanel] Failed to execute plugin {Path.GetFileName(assemblyPath)}: {ex.GetBaseException().Message}");
+                _logManager.LogError($"[ucUploadPanel] Failed to execute plugin '{Path.GetFileName(assemblyPath)}' on file '{filePath}': {ex.GetBaseException().Message}");
             }
         }
 
@@ -333,49 +375,56 @@ namespace ITM_Agent.Panels
 
         public void ProcessFileImmediately(string filePath, string dataTypeKey)
         {
+            _logManager.LogEvent($"[ucUploadPanel] Immediate processing requested for '{filePath}' with key '{dataTypeKey}'.");
             if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath))
             {
-                _logManager.LogDebug($"[ucUploadPanel] ProcessFileImmediately called with invalid path: {filePath}");
+                _logManager.LogError($"[ucUploadPanel] ProcessFileImmediately called with invalid path: {filePath}");
                 return;
             }
 
             string pluginName = "";
-            // UI 스레드에서 컨트롤 값을 안전하게 가져옵니다.
-            this.Invoke((MethodInvoker)delegate
+            try
             {
-                switch (dataTypeKey)
+                this.Invoke((MethodInvoker)delegate
                 {
-                    case "WaferFlat":
-                        pluginName = cb_FlatPlugin.Text;
-                        break;
-                    case "PreAlign":
-                        pluginName = cb_PreAlignPlugin.Text;
-                        break;
-                    // 필요 시 다른 데이터 타입에 대한 케이스 추가
-                }
-            });
+                    switch (dataTypeKey)
+                    {
+                        case "WaferFlat": pluginName = cb_FlatPlugin.Text; break;
+                        case "PreAlign": pluginName = cb_PreAlignPlugin.Text; break;
+                        // 필요 시 다른 데이터 타입에 대한 케이스 추가
+                    }
+                });
+            }
+            catch(Exception ex)
+            {
+                _logManager.LogError($"[ucUploadPanel] Error getting plugin name from UI for immediate processing (key '{dataTypeKey}'): {ex.Message}");
+                return;
+            }
 
             if (!string.IsNullOrEmpty(pluginName))
             {
                 _uploadQueue.Enqueue(new FileProcessItem(filePath, pluginName));
-                _logManager.LogEvent($"[ucUploadPanel] Immediately processing requested for: {Path.GetFileName(filePath)} with plugin {pluginName}");
+                _logManager.LogDebug($"[ucUploadPanel] Enqueued immediate processing request for: '{Path.GetFileName(filePath)}' with plugin '{pluginName}'");
             }
             else
             {
-                _logManager.LogError($"[ucUploadPanel] Could not find a plugin configured for data type key: {dataTypeKey}");
+                _logManager.LogError($"[ucUploadPanel] Could not find a plugin configured for data type key: {dataTypeKey}. Immediate processing aborted.");
             }
         }
 
         public void UpdateStatusOnRun(bool isRunning)
         {
+            _logManager.LogEvent($"[ucUploadPanel] Run status updated. IsRunning: {isRunning}");
             SetControlsEnabled(!isRunning);
 
             if (isRunning)
             {
+                _logManager.LogDebug("[ucUploadPanel] Run mode: Loading all settings and starting watchers.");
                 LoadAllSettings();
             }
             else
             {
+                _logManager.LogDebug("[ucUploadPanel] Stop mode: Stopping all watchers.");
                 var keys = _watchers.Keys.ToList();
                 foreach (var key in keys)
                 {
@@ -398,12 +447,10 @@ namespace ITM_Agent.Panels
             }
         }
 
-        /// <summary>
-        /// MainForm이 종료될 때 호출되어 모든 관리되지 않는 리소스와 백그라운드 작업을 정리합니다.
-        /// </summary>
         public void CleanUp()
         {
-            _cts.Cancel(); // 백그라운드 Task 중지
+            _logManager.LogEvent("[ucUploadPanel] CleanUp called. Stopping background tasks and watchers.");
+            _cts.Cancel(); 
             _cts.Dispose();
 
             var keys = _watchers.Keys.ToList();
@@ -417,10 +464,9 @@ namespace ITM_Agent.Panels
 
         private void OnPluginsChanged(object sender, EventArgs e)
         {
-            // 1. 플러그인 콤보박스의 아이템 목록을 최신 상태로 새로고침합니다.
+            _logManager.LogEvent("[ucUploadPanel] Received PluginsChanged event. Refreshing plugin lists.");
             LoadPluginItems();
-
-            // 2. 각 설정 항목을 검사하여, 만약 설정된 플러그인이 삭제되었다면 해당 설정을 초기화합니다.
+            
             CheckAndClearInvalidPluginSetting("WaferFlat", cb_WaferFlat_Path, cb_FlatPlugin);
             CheckAndClearInvalidPluginSetting("PreAlign", cb_PreAlign_Path, cb_PreAlignPlugin);
             CheckAndClearInvalidPluginSetting("Error", cb_ErrPath, cb_ErrPlugin);
@@ -431,13 +477,11 @@ namespace ITM_Agent.Panels
 
         private void CheckAndClearInvalidPluginSetting(string key, ComboBox comboPath, ComboBox comboPlugin)
         {
-            // 콤보박스에 텍스트가 있지만, 해당 텍스트가 아이템 목록에 더 이상 존재하지 않는 경우
             if (!string.IsNullOrEmpty(comboPlugin.Text) && !comboPlugin.Items.Contains(comboPlugin.Text))
             {
-                // 선택되었던 플러그인이 삭제된 것이므로, 이 설정을 초기화합니다.
                 string removedPluginName = comboPlugin.Text;
+                _logManager.LogEvent($"[ucUploadPanel] Setting for '{key}' is being cleared because its plugin '{removedPluginName}' was removed or is no longer available.");
                 ClearSetting(key, comboPath, comboPlugin);
-                _logManager.LogEvent($"[ucUploadPanel] Setting for '{key}' was cleared because plugin '{removedPluginName}' was removed.");
             }
         }
     }
