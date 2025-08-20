@@ -1,4 +1,4 @@
-﻿// ITM_Agent.Core/EqpidManager.cs
+// ITM_Agent.Core/EqpidManager.cs
 using ITM_Agent.Common;
 using ITM_Agent.Common.Interfaces;
 using Npgsql;
@@ -6,7 +6,6 @@ using System;
 using System.Collections.Concurrent;
 using System.Globalization;
 using System.Management;
-// using System.Windows.Forms; // UI 종속성 제거
 
 namespace ITM_Agent.Core
 {
@@ -46,12 +45,13 @@ namespace ITM_Agent.Core
 
             if (string.IsNullOrEmpty(eqpid))
             {
-                _logManager.LogEvent("[EqpidManager] Eqpid is empty. Prompting for input.");
+                _logManager.LogEvent("[EqpidManager] Eqpid not found in settings. Prompting for user input.");
                 PromptForEqpid();
             }
             else
             {
-                _logManager.LogEvent($"[EqpidManager] Eqpid found: {eqpid}");
+                _logManager.LogEvent($"[EqpidManager] Eqpid found in settings: {eqpid}");
+                _logManager.LogDebug($"[EqpidManager] Application Type from settings: {_settingsManager.GetApplicationType()}");
             }
         }
 
@@ -60,6 +60,7 @@ namespace ITM_Agent.Core
         /// </summary>
         private void PromptForEqpid()
         {
+            _logManager.LogDebug("[EqpidManager] Executing prompt action for Eqpid input.");
             var result = _promptForEqpidAction();
 
             if (result.Eqpid != null)
@@ -67,7 +68,8 @@ namespace ITM_Agent.Core
                 string newEqpid = result.Eqpid.ToUpper();
                 string type = result.Type;
 
-                _logManager.LogEvent($"[EqpidManager] Eqpid input accepted: {newEqpid}, Type: {type}");
+                _logManager.LogEvent($"[EqpidManager] User entered new Eqpid: {newEqpid}, Type: {type}");
+                _logManager.LogDebug("[EqpidManager] Saving new Eqpid and Type to settings.");
                 _settingsManager.SetEqpid(newEqpid);
                 _settingsManager.SetApplicationType(type);
 
@@ -76,7 +78,7 @@ namespace ITM_Agent.Core
             else
             {
                 // 입력이 취소된 경우
-                _logManager.LogEvent("[EqpidManager] Eqpid input was canceled.");
+                _logManager.LogEvent("[EqpidManager] Eqpid input was canceled by the user.");
                 _handleCanceledAction();
             }
         }
@@ -86,14 +88,18 @@ namespace ITM_Agent.Core
         /// </summary>
         private void UploadAgentInfoToDatabase(string eqpid, string type)
         {
+            _logManager.LogEvent($"[EqpidManager] Preparing to upload agent info to database for Eqpid: {eqpid}");
             string connString = DatabaseInfo.CreateDefault().GetConnectionString();
             var systemInfo = SystemInfoCollector.Collect();
+
+            _logManager.LogDebug($"[EqpidManager] System Info Collected: OS='{systemInfo.OsVersion}', Arch='{systemInfo.Architecture}', Machine='{systemInfo.MachineName}', Locale='{systemInfo.Locale}', TZ='{systemInfo.TimeZoneId}'");
 
             try
             {
                 using (var conn = new NpgsqlConnection(connString))
                 {
                     conn.Open();
+                    _logManager.LogDebug("[EqpidManager] Database connection opened.");
 
                     const string upsertSql = @"
                         INSERT INTO public.agent_info
@@ -113,9 +119,6 @@ namespace ITM_Agent.Core
 
                     using (var cmd = new NpgsqlCommand(upsertSql, conn))
                     {
-                        // *** 수정된 부분: reg_date로 사용할 시간 값에서 밀리초 제거 ***
-                        // systemInfo.PcTime에서 년, 월, 일, 시, 분, 초 값만 사용하여
-                        // 밀리초가 0으로 설정된 새로운 DateTime 객체를 생성합니다.
                         DateTime pcTimeWithoutMilliseconds = new DateTime(
                             systemInfo.PcTime.Year,
                             systemInfo.PcTime.Month,
@@ -124,6 +127,7 @@ namespace ITM_Agent.Core
                             systemInfo.PcTime.Minute,
                             systemInfo.PcTime.Second
                         );
+                        _logManager.LogDebug($"[EqpidManager] PC time normalized to: {pcTimeWithoutMilliseconds:yyyy-MM-dd HH:mm:ss}");
 
                         cmd.Parameters.AddWithValue("@eqpid", eqpid);
                         cmd.Parameters.AddWithValue("@type", type);
@@ -135,14 +139,16 @@ namespace ITM_Agent.Core
                         cmd.Parameters.AddWithValue("@app_ver", _appVersion);
                         cmd.Parameters.AddWithValue("@reg_date", pcTimeWithoutMilliseconds);
 
+                        _logManager.LogDebug("[EqpidManager] Executing UPSERT command for agent_info.");
                         int rowsAffected = cmd.ExecuteNonQuery();
-                        _logManager.LogEvent($"[EqpidManager] Agent info uploaded to DB. (Rows affected: {rowsAffected})");
+                        _logManager.LogEvent($"[EqpidManager] Agent info uploaded to DB successfully. (Rows affected: {rowsAffected})");
                     }
                 }
             }
             catch (Exception ex)
             {
-                _logManager.LogError($"[EqpidManager] Failed to upload agent info to DB: {ex.Message}");
+                _logManager.LogError($"[EqpidManager] Failed to upload agent info to DB for Eqpid '{eqpid}': {ex.Message}");
+                _logManager.LogDebug($"[EqpidManager] DB Upload Exception Details: {ex.ToString()}");
             }
         }
 
@@ -153,9 +159,11 @@ namespace ITM_Agent.Core
         {
             if (TimezoneCache.TryGetValue(eqpid, out TimeZoneInfo cachedZone))
             {
+                _logManager.LogDebug($"[EqpidManager] Timezone for '{eqpid}' found in cache: {cachedZone.Id}");
                 return cachedZone;
             }
-
+            
+            _logManager.LogDebug($"[EqpidManager] Timezone for '{eqpid}' not in cache. Fetching from database.");
             try
             {
                 string connString = DatabaseInfo.CreateDefault().GetConnectionString();
@@ -169,18 +177,22 @@ namespace ITM_Agent.Core
                         if (result != null && result != DBNull.Value)
                         {
                             string timezoneId = result.ToString();
+                            _logManager.LogDebug($"[EqpidManager] Found timezone '{timezoneId}' for '{eqpid}' in DB.");
                             TimeZoneInfo fetchedZone = TimeZoneInfo.FindSystemTimeZoneById(timezoneId);
                             TimezoneCache.TryAdd(eqpid, fetchedZone);
                             return fetchedZone;
                         }
+                        _logManager.LogDebug($"[EqpidManager] No timezone information found in DB for '{eqpid}'.");
                     }
                 }
             }
             catch (Exception ex)
             {
-                _logManager.LogError($"[EqpidManager] Failed to fetch timezone for {eqpid}: {ex.Message}");
+                _logManager.LogError($"[EqpidManager] Failed to fetch timezone for '{eqpid}' from DB: {ex.Message}");
+                _logManager.LogDebug($"[EqpidManager] Fetch Timezone Exception Details: {ex.ToString()}");
             }
 
+            _logManager.LogEvent($"[EqpidManager] Returning local timezone as a fallback for '{eqpid}'.");
             return TimeZoneInfo.Local;
         }
     }
@@ -206,6 +218,7 @@ namespace ITM_Agent.Core
         {
             try
             {
+                // WMI를 사용하여 더 상세한 OS 이름 가져오기
                 using (var searcher = new ManagementObjectSearcher("SELECT Caption FROM Win32_OperatingSystem"))
                 {
                     foreach (var obj in searcher.Get())
@@ -216,6 +229,7 @@ namespace ITM_Agent.Core
             }
             catch
             {
+                // WMI 실패 시 기본 OS 버전 문자열 반환
                 return Environment.OSVersion.VersionString;
             }
             return "Unknown OS";
