@@ -168,7 +168,7 @@ namespace ITM_Agent.Panels
                 var foldersToRemove = listBox.SelectedItems.Cast<string>()
                     .Select(item => item.Substring(item.IndexOf(' ') + 1))
                     .ToList();
-                
+
                 _logManager.LogDebug($"[ucConfigurationPanel] User confirmed removal of {foldersToRemove.Count} folder(s).");
 
                 var currentFolders = _settingsManager.GetFoldersFromSection(section);
