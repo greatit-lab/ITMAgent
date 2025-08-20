@@ -1,4 +1,4 @@
-﻿// ITM_Agent.Core/TimeSyncProvider.cs
+// ITM_Agent.Core/TimeSyncProvider.cs
 using ITM_Agent.Common;
 using Npgsql;
 using System;
@@ -36,6 +36,7 @@ namespace ITM_Agent.Core
 
         private TimeSyncProvider()
         {
+            Console.WriteLine("[INFO] TimeSyncProvider - Initializing instance...");
             // KST 타임존 정보 로드 (Windows와 Linux/macOS 환경 모두 호환)
             try
             {
@@ -43,8 +44,18 @@ namespace ITM_Agent.Core
             }
             catch (TimeZoneNotFoundException)
             {
-                _koreaStandardTimezone = TimeZoneInfo.FindSystemTimeZoneById("Asia/Seoul");
+                try
+                {
+                    _koreaStandardTimezone = TimeZoneInfo.FindSystemTimeZoneById("Asia/Seoul");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[CRITICAL] TimeSyncProvider - KST timezone could not be found. {ex.Message}");
+                    // KST를 찾을 수 없는 경우, 시스템 로컬 타임존을 사용 (최후의 수단)
+                    _koreaStandardTimezone = TimeZoneInfo.Local;
+                }
             }
+            Console.WriteLine($"[INFO] TimeSyncProvider - Using timezone: {_koreaStandardTimezone.Id}");
 
             // 앱 시작 시 즉시 동기화 후, 10분마다 주기적으로 서버 시간과 동기화
             _syncTimer = new Timer(
@@ -60,6 +71,7 @@ namespace ITM_Agent.Core
         /// </summary>
         private void SynchronizeWithServer()
         {
+            Console.WriteLine("[EVENT] TimeSyncProvider - Starting time synchronization with the server...");
             try
             {
                 string connString = DatabaseInfo.CreateDefault().GetConnectionString();
@@ -76,14 +88,15 @@ namespace ITM_Agent.Core
                         {
                             _clockDifference = serverUtcTime - clientUtcTime;
                         }
-                        Console.WriteLine($"[TimeSyncProvider] Time synchronized. Difference: {_clockDifference.TotalMilliseconds}ms");
+                        Console.WriteLine($"[EVENT] TimeSyncProvider - Time synchronized successfully.");
+                        Console.WriteLine($"[DEBUG] TimeSyncProvider - Server UTC: {serverUtcTime:yyyy-MM-dd HH:mm:ss.fff}, Client UTC: {clientUtcTime:yyyy-MM-dd HH:mm:ss.fff}, Calculated Difference: {_clockDifference.TotalMilliseconds}ms");
                     }
                 }
             }
             catch (Exception ex)
             {
                 // DB 연결 실패 시 기존 시간 차이 값을 유지하며, 에러 로그 출력
-                Console.WriteLine($"[TimeSyncProvider] Failed to synchronize with server: {ex.Message}");
+                Console.WriteLine($"[ERROR] TimeSyncProvider - Failed to synchronize time with server: {ex.Message}");
             }
         }
 
@@ -108,7 +121,12 @@ namespace ITM_Agent.Core
             }
 
             // 3. 동기화된 UTC 시간을 최종적으로 KST로 변환하여 반환합니다.
-            return TimeZoneInfo.ConvertTimeFromUtc(synchronizedUtcTime, _koreaStandardTimezone);
+            DateTime kstTime = TimeZoneInfo.ConvertTimeFromUtc(synchronizedUtcTime, _koreaStandardTimezone);
+
+            // 디버깅을 위해 변환 과정을 로그로 남길 수 있지만, 너무 빈번하게 호출되므로 주석 처리
+            // Console.WriteLine($"[DEBUG] TimeSyncProvider - Time conversion: {agentLocalTime:s} (Local) -> {synchronizedUtcTime:s} (Sync UTC) -> {kstTime:s} (KST)");
+            
+            return kstTime;
         }
 
         /// <summary>
@@ -116,6 +134,7 @@ namespace ITM_Agent.Core
         /// </summary>
         public void Dispose()
         {
+            Console.WriteLine("[INFO] TimeSyncProvider - Disposing instance and stopping timer.");
             _syncTimer?.Dispose();
         }
     }
