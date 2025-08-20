@@ -1,6 +1,7 @@
-﻿// ITM_Agent/Forms/RegexConfigForm.cs
+// ITM_Agent/Forms/RegexConfigForm.cs
 using ITM_Agent.Properties;
 using System;
+using System.Diagnostics;
 using System.Windows.Forms;
 
 namespace ITM_Agent.Forms
@@ -79,6 +80,7 @@ namespace ITM_Agent.Forms
         {
             if (string.IsNullOrWhiteSpace(RegexPattern))
             {
+                Debug.WriteLine("[RegexConfigForm] Validation failed: Regex pattern is empty.");
                 // Resources.resx 파일에서 경고 메시지 로드
                 MessageBox.Show(Resources.MSG_REGEX_REQUIRED,
                                 Resources.CAPTION_WARNING,
@@ -87,6 +89,7 @@ namespace ITM_Agent.Forms
             }
             if (string.IsNullOrWhiteSpace(TargetFolder))
             {
+                Debug.WriteLine("[RegexConfigForm] Validation failed: Target folder is empty.");
                 MessageBox.Show(Resources.MSG_FOLDER_REQUIRED,
                                 Resources.CAPTION_WARNING,
                                 MessageBoxButtons.OK, MessageBoxIcon.Warning);
