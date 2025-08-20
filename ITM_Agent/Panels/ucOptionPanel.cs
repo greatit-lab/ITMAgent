@@ -1,4 +1,4 @@
-﻿// ITM_Agent/Panels/ucOptionPanel.cs
+// ITM_Agent/Panels/ucOptionPanel.cs
 using ITM_Agent.Common.Interfaces;
 using System;
 using System.Windows.Forms;
@@ -11,6 +11,7 @@ namespace ITM_Agent.Panels
     public partial class ucOptionPanel : UserControl
     {
         private readonly ISettingsManager _settingsManager;
+        private readonly ILogManager _logManager;
         private bool _isInitializing = true; // 초기 로드 시 이벤트 발생을 막기 위한 플래그
 
         /// <summary>
@@ -18,9 +19,11 @@ namespace ITM_Agent.Panels
         /// </summary>
         public event Action<bool> DebugModeChanged;
 
-        public ucOptionPanel(ISettingsManager settingsManager)
+        public ucOptionPanel(ISettingsManager settingsManager, ILogManager logManager)
         {
             _settingsManager = settingsManager ?? throw new ArgumentNullException(nameof(settingsManager));
+            _logManager = logManager ?? throw new ArgumentNullException(nameof(logManager));
+
             InitializeComponent();
             InitializeControls();
             RegisterEventHandlers();
@@ -33,6 +36,7 @@ namespace ITM_Agent.Panels
         /// </summary>
         private void InitializeControls()
         {
+            _logManager.LogDebug("[ucOptionPanel] Initializing controls.");
             cb_info_Retention.Items.Clear();
             cb_info_Retention.Items.AddRange(new object[] { "1", "3", "5" });
             cb_info_Retention.DropDownStyle = ComboBoxStyle.DropDownList;
@@ -55,28 +59,43 @@ namespace ITM_Agent.Panels
         /// </summary>
         private void LoadSettings()
         {
-            chk_DebugMode.Checked = _settingsManager.IsDebugMode;
-            chk_PerfoMode.Checked = _settingsManager.IsPerformanceLogging;
-            chk_infoDel.Checked = _settingsManager.IsInfoDeletionEnabled;
+            _logManager.LogDebug("[ucOptionPanel] Loading settings into UI controls.");
+            _isInitializing = true; // 설정 로드 중에는 이벤트 핸들러가 동작하지 않도록 설정
 
-            string retentionDays = _settingsManager.InfoRetentionDays.ToString();
-            if (cb_info_Retention.Items.Contains(retentionDays))
+            try
             {
-                cb_info_Retention.SelectedItem = retentionDays;
-            }
-            else
-            {
-                // 설정값이 1,3,5가 아니면 기본값 "1" 선택
-                if (chk_infoDel.Checked)
+                chk_DebugMode.Checked = _settingsManager.IsDebugMode;
+                chk_PerfoMode.Checked = _settingsManager.IsPerformanceLogging;
+                chk_infoDel.Checked = _settingsManager.IsInfoDeletionEnabled;
+
+                string retentionDays = _settingsManager.InfoRetentionDays.ToString();
+                if (cb_info_Retention.Items.Contains(retentionDays))
                 {
-                    cb_info_Retention.SelectedItem = "1";
+                    cb_info_Retention.SelectedItem = retentionDays;
                 }
                 else
                 {
-                    cb_info_Retention.SelectedIndex = -1; // 선택 없음
+                    // 설정값이 1,3,5가 아니면 기본값 "1" 선택
+                    if (chk_infoDel.Checked)
+                    {
+                        cb_info_Retention.SelectedItem = "1";
+                    }
+                    else
+                    {
+                        cb_info_Retention.SelectedIndex = -1; // 선택 없음
+                    }
                 }
+                UpdateRetentionControlsState();
+                _logManager.LogDebug("[ucOptionPanel] Settings loaded successfully.");
             }
-            UpdateRetentionControlsState();
+            catch (Exception ex)
+            {
+                _logManager.LogError($"[ucOptionPanel] Failed to load settings: {ex.Message}");
+            }
+            finally
+            {
+                _isInitializing = false;
+            }
         }
 
         /// <summary>
@@ -86,31 +105,54 @@ namespace ITM_Agent.Panels
         {
             if (_isInitializing) return;
 
+            _logManager.LogDebug($"[ucOptionPanel] Settings changed by '{((Control)sender).Name}'.");
+
             // 디버그 모드 설정 저장 및 이벤트 발생
-            _settingsManager.IsDebugMode = chk_DebugMode.Checked;
-            DebugModeChanged?.Invoke(chk_DebugMode.Checked);
+            bool isDebugEnabled = chk_DebugMode.Checked;
+            if (_settingsManager.IsDebugMode != isDebugEnabled)
+            {
+                _settingsManager.IsDebugMode = isDebugEnabled;
+                DebugModeChanged?.Invoke(isDebugEnabled); // MainForm에 이벤트 전파
+                _logManager.LogEvent($"[ucOptionPanel] Debug Mode {(isDebugEnabled ? "Enabled" : "Disabled")}.");
+            }
 
             // 성능 로그 설정 저장
-            _settingsManager.IsPerformanceLogging = chk_PerfoMode.Checked;
+            bool isPerfLogEnabled = chk_PerfoMode.Checked;
+            if (_settingsManager.IsPerformanceLogging != isPerfLogEnabled)
+            {
+                _settingsManager.IsPerformanceLogging = isPerfLogEnabled;
+                _logManager.LogEvent($"[ucOptionPanel] Performance Logging {(isPerfLogEnabled ? "Enabled" : "Disabled")}.");
+            }
 
             // 자동 삭제 설정 저장
             bool isDeletionEnabled = chk_infoDel.Checked;
-            _settingsManager.IsInfoDeletionEnabled = isDeletionEnabled;
+            if (_settingsManager.IsInfoDeletionEnabled != isDeletionEnabled)
+            {
+                _settingsManager.IsInfoDeletionEnabled = isDeletionEnabled;
+                _logManager.LogEvent($"[ucOptionPanel] Info Deletion {(isDeletionEnabled ? "Enabled" : "Disabled")}.");
+            }
 
             if (isDeletionEnabled)
             {
-                // 기능 활성화: 선택된 값이 없으면 "1"로 기본 설정
                 if (cb_info_Retention.SelectedIndex < 0)
                 {
-                    cb_info_Retention.SelectedItem = "1";
+                    cb_info_Retention.SelectedItem = "1"; // 기능 활성화 시 기본값 "1" 설정
                 }
-                _settingsManager.InfoRetentionDays = int.Parse(cb_info_Retention.SelectedItem.ToString());
+                int newRetentionDays = int.Parse(cb_info_Retention.SelectedItem.ToString());
+                if (_settingsManager.InfoRetentionDays != newRetentionDays)
+                {
+                    _settingsManager.InfoRetentionDays = newRetentionDays;
+                    _logManager.LogEvent($"[ucOptionPanel] Info Retention Days set to {newRetentionDays}.");
+                }
             }
             else
             {
-                // *** 기능 비활성화: 설정값을 0으로 변경하고 콤보박스 선택 해제 (누락되었던 로직) ***
-                _settingsManager.InfoRetentionDays = 0; // 비활성화 상태를 0으로 저장
-                cb_info_Retention.SelectedIndex = -1; // UI 선택 초기화
+                if (_settingsManager.InfoRetentionDays != 0)
+                {
+                    _settingsManager.InfoRetentionDays = 0; // 비활성화 상태는 0으로 저장
+                    cb_info_Retention.SelectedIndex = -1; // UI 선택 초기화
+                    _logManager.LogEvent("[ucOptionPanel] Info Retention Days set to 0 (disabled).");
+                }
             }
 
             // UI 컨트롤 상태 업데이트
@@ -126,6 +168,7 @@ namespace ITM_Agent.Panels
             label3.Enabled = isEnabled;
             label4.Enabled = isEnabled;
             cb_info_Retention.Enabled = isEnabled;
+            _logManager.LogDebug($"[ucOptionPanel] Retention controls enabled status set to: {isEnabled}");
         }
 
         /// <summary>
@@ -133,6 +176,7 @@ namespace ITM_Agent.Panels
         /// </summary>
         public void UpdateStatusOnRun(bool isRunning)
         {
+            _logManager.LogDebug($"[ucOptionPanel] Updating control enabled status based on run state. IsRunning: {isRunning}");
             SetControlsEnabled(!isRunning);
         }
 
@@ -149,6 +193,8 @@ namespace ITM_Agent.Panels
             }
             else
             {
+                label3.Enabled = false;
+                label4.Enabled = false;
                 cb_info_Retention.Enabled = false;
             }
         }
