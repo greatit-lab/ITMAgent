@@ -162,7 +162,7 @@ namespace ITM_Agent.Core
                 _logManager.LogDebug($"[EqpidManager] Timezone for '{eqpid}' found in cache: {cachedZone.Id}");
                 return cachedZone;
             }
-            
+
             _logManager.LogDebug($"[EqpidManager] Timezone for '{eqpid}' not in cache. Fetching from database.");
             try
             {
