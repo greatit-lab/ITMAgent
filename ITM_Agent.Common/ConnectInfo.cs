@@ -1,4 +1,4 @@
-﻿// ITM_Agent.Common/ConnectInfo.cs
+// ITM_Agent.Common/ConnectInfo.cs
 using Npgsql;
 using System;
 
@@ -52,18 +52,22 @@ namespace ITM_Agent.Common
         /// </summary>
         public void TestConnection()
         {
-            Console.WriteLine($"[DB] Connection Attempt ▶ {GetConnectionString()}");
+            // 중요: 실제 운영 환경에서는 암호를 로그에 남기지 않도록 주의해야 합니다.
+            // 여기서는 진단 목적으로 연결 정보 일부를 포함합니다.
+            var csb = new NpgsqlConnectionStringBuilder(GetConnectionString());
+            Console.WriteLine($"[DEBUG] DatabaseInfo - Testing connection to Host={csb.Host}, Database={csb.Database}, Username={csb.Username}");
+
             try
             {
                 using (var conn = new NpgsqlConnection(GetConnectionString()))
                 {
                     conn.Open();
-                    Console.WriteLine($"[DB] Connection Succeeded ▶ PostgreSQL Version: {conn.PostgreSqlVersion}");
+                    Console.WriteLine($"[INFO] DatabaseInfo - Connection Succeeded. PostgreSQL Version: {conn.PostgreSqlVersion}");
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[DB] Connection Failed ▶ {ex.Message}");
+                Console.WriteLine($"[ERROR] DatabaseInfo - Connection Failed: {ex.Message}");
             }
         }
     }
