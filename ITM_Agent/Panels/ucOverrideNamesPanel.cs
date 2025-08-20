@@ -1,4 +1,4 @@
-﻿// ITM_Agent/Panels/ucOverrideNamesPanel.cs
+// ITM_Agent/Panels/ucOverrideNamesPanel.cs
 using ITM_Agent.Common.Interfaces;
 using ITM_Agent.Forms;
 using ITM_Agent.Panels;
@@ -29,7 +29,6 @@ namespace ITM_Agent.Panels
         private FileSystemWatcher _baselineFolderWatcher;
 
         private readonly Dictionary<string, FileTrackingInfo> _trackedFiles = new Dictionary<string, FileTrackingInfo>();
-        // CS0104 오류 해결: System.Threading.Timer를 명시적으로 사용
         private System.Threading.Timer _stabilityTimer;
         private readonly object _trackingLock = new object();
         private const double STABILITY_CHECK_SECONDS = 2.0;
@@ -51,16 +50,10 @@ namespace ITM_Agent.Panels
             LoadAllSettings();
         }
 
-        // MainForm에서 UploadPanel의 참조를 설정하기 위한 public 메서드
         public void LinkUploadPanel(ucUploadPanel uploadPanel)
         {
             _ucUploadPanel = uploadPanel ?? throw new ArgumentNullException(nameof(uploadPanel));
-        }
-
-        public void SetUploadPanel(ucUploadPanel uploadPanel)
-        {
-            // 이제 readonly가 아니므로 할당 가능
-            _ucUploadPanel = uploadPanel ?? throw new ArgumentNullException(nameof(uploadPanel));
+            _logManager.LogDebug("[ucOverrideNamesPanel] ucUploadPanel linked successfully.");
         }
 
         private void RegisterEventHandlers()
@@ -73,12 +66,14 @@ namespace ITM_Agent.Panels
 
         private void LoadAllSettings()
         {
+            _logManager.LogDebug("[ucOverrideNamesPanel] Loading all settings.");
             LoadRegexFolderPaths();
             LoadTargetComparePaths();
         }
 
         private void LoadRegexFolderPaths()
         {
+            _logManager.LogDebug("[ucOverrideNamesPanel] Loading regex folder paths for BaseDatePath dropdown.");
             cb_BaseDatePath.Items.Clear();
             var folderPaths = _configPanel.GetRegexTargetFolders();
             cb_BaseDatePath.Items.AddRange(folderPaths.ToArray());
@@ -87,6 +82,7 @@ namespace ITM_Agent.Panels
             if (!string.IsNullOrEmpty(selectedPath) && cb_BaseDatePath.Items.Contains(selectedPath))
             {
                 cb_BaseDatePath.SelectedItem = selectedPath;
+                _logManager.LogDebug($"[ucOverrideNamesPanel] Loaded BaseDatePath: {selectedPath}");
             }
             else
             {
@@ -96,12 +92,17 @@ namespace ITM_Agent.Panels
 
         private void LoadTargetComparePaths()
         {
+            _logManager.LogDebug("[ucOverrideNamesPanel] Loading target compare paths.");
             lb_TargetComparePath.Items.Clear();
             var folders = _settingsManager.GetFoldersFromSection("[TargetComparePath]");
             lb_TargetComparePath.Items.AddRange(folders.ToArray());
         }
 
-        public void RefreshUI() => LoadAllSettings();
+        public void RefreshUI()
+        {
+            _logManager.LogEvent("[ucOverrideNamesPanel] RefreshUI called externally.");
+            LoadAllSettings();
+        }
 
         #endregion
 
@@ -111,20 +112,31 @@ namespace ITM_Agent.Panels
         {
             if (cb_BaseDatePath.SelectedItem is string selectedPath)
             {
+                _logManager.LogEvent($"[ucOverrideNamesPanel] BaseDatePath changed to: {selectedPath}");
                 _settingsManager.SetValueToSection("OverrideNames", "BaseDatePath", selectedPath);
-                if (_isRunning) StartWatchers();
+                if (_isRunning)
+                {
+                    _logManager.LogDebug("[ucOverrideNamesPanel] Restarting watchers due to BaseDatePath change.");
+                    StartWatchers();
+                }
             }
         }
 
         private void OnBaseClearClick(object sender, EventArgs e)
         {
+            _logManager.LogEvent("[ucOverrideNamesPanel] BaseDatePath cleared.");
             cb_BaseDatePath.SelectedIndex = -1;
             _settingsManager.RemoveKeyFromSection("OverrideNames", "BaseDatePath");
-            if (_isRunning) StopWatchers();
+            if (_isRunning)
+            {
+                _logManager.LogDebug("[ucOverrideNamesPanel] Stopping watchers due to BaseDatePath clear.");
+                StopWatchers();
+            }
         }
 
         private void OnSelectTargetFolderClick(object sender, EventArgs e)
         {
+            _logManager.LogEvent("[ucOverrideNamesPanel] Select target compare folder button clicked.");
             using (var dialog = new FolderBrowserDialog())
             {
                 if (dialog.ShowDialog() == DialogResult.OK)
@@ -133,11 +145,17 @@ namespace ITM_Agent.Panels
                     {
                         lb_TargetComparePath.Items.Add(dialog.SelectedPath);
                         UpdateTargetComparePathsInSettings();
+                        _logManager.LogEvent($"[ucOverrideNamesPanel] Added target compare folder: {dialog.SelectedPath}");
                     }
                     else
                     {
+                        _logManager.LogDebug($"[ucOverrideNamesPanel] Folder '{dialog.SelectedPath}' already exists in the target compare list.");
                         MessageBox.Show("해당 폴더는 이미 추가되어 있습니다.", "알림", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     }
+                }
+                else
+                {
+                     _logManager.LogDebug("[ucOverrideNamesPanel] Select folder dialog was canceled.");
                 }
             }
         }
@@ -146,14 +164,21 @@ namespace ITM_Agent.Panels
         {
             if (lb_TargetComparePath.SelectedItems.Count > 0)
             {
+                _logManager.LogEvent("[ucOverrideNamesPanel] Remove target compare folder button clicked.");
                 if (MessageBox.Show("선택한 항목을 삭제하시겠습니까?", "삭제 확인", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes)
                 {
                     var itemsToRemove = lb_TargetComparePath.SelectedItems.Cast<string>().ToList();
+                    _logManager.LogDebug($"[ucOverrideNamesPanel] User confirmed removal of {itemsToRemove.Count} target compare folder(s).");
                     foreach (var item in itemsToRemove)
                     {
                         lb_TargetComparePath.Items.Remove(item);
                     }
                     UpdateTargetComparePathsInSettings();
+                    _logManager.LogEvent($"[ucOverrideNamesPanel] Removed {itemsToRemove.Count} target compare folder(s).");
+                }
+                else
+                {
+                    _logManager.LogDebug("[ucOverrideNamesPanel] Folder removal was canceled by user.");
                 }
             }
             else
@@ -166,6 +191,7 @@ namespace ITM_Agent.Panels
         {
             var folders = lb_TargetComparePath.Items.Cast<string>().ToList();
             _settingsManager.SetFoldersToSection("[TargetComparePath]", folders);
+            _logManager.LogDebug("[ucOverrideNamesPanel] Updated '[TargetComparePath]' section in settings.ini.");
         }
 
         #endregion
@@ -174,48 +200,87 @@ namespace ITM_Agent.Panels
 
         private void StartWatchers()
         {
+            _logManager.LogDebug("[ucOverrideNamesPanel] Attempting to start watchers.");
             StopWatchers();
 
             string baseDatePath = cb_BaseDatePath.SelectedItem as string;
             if (!string.IsNullOrEmpty(baseDatePath) && Directory.Exists(baseDatePath))
             {
-                _baseDateFolderWatcher = new FileSystemWatcher(baseDatePath)
+                try
                 {
-                    NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite,
-                    EnableRaisingEvents = true
-                };
-                _baseDateFolderWatcher.Created += OnFileSystemEvent;
-                _baseDateFolderWatcher.Changed += OnFileSystemEvent;
-                _logManager.LogEvent($"[OverrideNames] Base date folder watching started: {baseDatePath}");
+                    _baseDateFolderWatcher = new FileSystemWatcher(baseDatePath)
+                    {
+                        NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite,
+                        EnableRaisingEvents = true
+                    };
+                    _baseDateFolderWatcher.Created += OnFileSystemEvent;
+                    _baseDateFolderWatcher.Changed += OnFileSystemEvent;
+                    _logManager.LogEvent($"[ucOverrideNamesPanel] Base date folder watcher started: {baseDatePath}");
+                }
+                catch (Exception ex)
+                {
+                    _logManager.LogError($"[ucOverrideNamesPanel] Failed to start BaseDateFolderWatcher on '{baseDatePath}': {ex.Message}");
+                }
+            }
+            else
+            {
+                _logManager.LogDebug("[ucOverrideNamesPanel] BaseDatePath is not set or does not exist. Watcher not started.");
             }
 
             string baselineFolder = Path.Combine(_settingsManager.GetBaseFolder(), "Baseline");
             if (Directory.Exists(baselineFolder))
             {
-                _baselineFolderWatcher = new FileSystemWatcher(baselineFolder, "*.info")
+                try
                 {
-                    NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite,
-                    EnableRaisingEvents = true
-                };
-                _baselineFolderWatcher.Created += OnBaselineFileChanged;
-                _baselineFolderWatcher.Changed += OnBaselineFileChanged;
-                _logManager.LogEvent($"[OverrideNames] Baseline folder watching started: {baselineFolder}");
+                    _baselineFolderWatcher = new FileSystemWatcher(baselineFolder, "*.info")
+                    {
+                        NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite,
+                        EnableRaisingEvents = true
+                    };
+                    _baselineFolderWatcher.Created += OnBaselineFileChanged;
+                    _baselineFolderWatcher.Changed += OnBaselineFileChanged;
+                    _logManager.LogEvent($"[ucOverrideNamesPanel] Baseline folder watcher started: {baselineFolder}");
+                }
+                catch (Exception ex)
+                {
+                     _logManager.LogError($"[ucOverrideNamesPanel] Failed to start BaselineFolderWatcher on '{baselineFolder}': {ex.Message}");
+                }
+            }
+             else
+            {
+                _logManager.LogDebug($"[ucOverrideNamesPanel] Baseline folder '{baselineFolder}' does not exist. Watcher not started.");
             }
         }
 
         private void StopWatchers()
         {
-            _baseDateFolderWatcher?.Dispose();
-            _baseDateFolderWatcher = null;
-            _baselineFolderWatcher?.Dispose();
-            _baselineFolderWatcher = null;
-            _stabilityTimer?.Dispose();
-            _stabilityTimer = null;
+            if (_baseDateFolderWatcher != null)
+            {
+                _baseDateFolderWatcher.EnableRaisingEvents = false;
+                _baseDateFolderWatcher.Dispose();
+                _baseDateFolderWatcher = null;
+                _logManager.LogDebug("[ucOverrideNamesPanel] BaseDateFolderWatcher stopped.");
+            }
+            if (_baselineFolderWatcher != null)
+            {
+                _baselineFolderWatcher.EnableRaisingEvents = false;
+                _baselineFolderWatcher.Dispose();
+                _baselineFolderWatcher = null;
+                _logManager.LogDebug("[ucOverrideNamesPanel] BaselineFolderWatcher stopped.");
+            }
+            if (_stabilityTimer != null)
+            {
+                _stabilityTimer.Dispose();
+                _stabilityTimer = null;
+                 _logManager.LogDebug("[ucOverrideNamesPanel] Stability timer stopped.");
+            }
         }
 
         private void OnFileSystemEvent(object sender, FileSystemEventArgs e)
         {
             if (!_isRunning || !File.Exists(e.FullPath)) return;
+
+            _logManager.LogDebug($"[ucOverrideNamesPanel] File event '{e.ChangeType}' detected for: {e.FullPath}");
 
             lock (_trackingLock)
             {
@@ -228,7 +293,7 @@ namespace ITM_Agent.Panels
 
                 if (_stabilityTimer == null)
                 {
-                    // CS0104 오류 해결: System.Threading.Timer를 명시적으로 사용
+                    _logManager.LogDebug("[ucOverrideNamesPanel] Starting file stability check timer.");
                     _stabilityTimer = new System.Threading.Timer(_ => CheckFileStability(), null, 2000, 2000);
                 }
             }
@@ -239,6 +304,7 @@ namespace ITM_Agent.Panels
             var stableFiles = new List<string>();
             lock (_trackingLock)
             {
+                 _logManager.LogDebug($"[ucOverrideNamesPanel] Checking file stability for {_trackedFiles.Count} file(s).");
                 var now = DateTime.Now;
                 foreach (var kvp in _trackedFiles.ToList())
                 {
@@ -250,6 +316,7 @@ namespace ITM_Agent.Panels
 
                     if (currentSize != info.LastSize || currentWriteTime != info.LastWriteTime)
                     {
+                        _logManager.LogDebug($"[ucOverrideNamesPanel] File '{Path.GetFileName(filePath)}' is still changing. Resetting timer.");
                         info.LastEventTime = now;
                         info.LastSize = currentSize;
                         info.LastWriteTime = currentWriteTime;
@@ -258,15 +325,17 @@ namespace ITM_Agent.Panels
 
                     if ((now - info.LastEventTime).TotalSeconds >= STABILITY_CHECK_SECONDS)
                     {
+                        _logManager.LogDebug($"[ucOverrideNamesPanel] File '{Path.GetFileName(filePath)}' is stable.");
                         stableFiles.Add(filePath);
                     }
                 }
                 stableFiles.ForEach(f => _trackedFiles.Remove(f));
 
-                if (!_trackedFiles.Any())
+                if (!_trackedFiles.Any() && _stabilityTimer != null)
                 {
-                    _stabilityTimer?.Dispose();
+                    _stabilityTimer.Dispose();
                     _stabilityTimer = null;
+                    _logManager.LogDebug("[ucOverrideNamesPanel] File tracking queue is empty. Stability timer stopped.");
                 }
             }
             stableFiles.ForEach(ProcessStableFile);
@@ -274,51 +343,73 @@ namespace ITM_Agent.Panels
 
         private void ProcessStableFile(string filePath)
         {
+            _logManager.LogEvent($"[ucOverrideNamesPanel] Processing stable file: {Path.GetFileName(filePath)}");
             try
             {
                 if (!WaitForFileReady(filePath, maxRetries: 10, delayMs: 500))
                 {
-                    _logManager.LogError($"[OverrideNames] File is locked and could not be processed: {filePath}");
+                    _logManager.LogError($"[ucOverrideNamesPanel] File is locked and could not be processed: {filePath}");
                     return;
                 }
 
-                if (!File.Exists(filePath)) return;
+                if (!File.Exists(filePath))
+                {
+                    _logManager.LogDebug($"[ucOverrideNamesPanel] File no longer exists, skipping: {filePath}");
+                    return;
+                }
 
                 DateTime? dateTimeInfo = ExtractDateTimeFromFile(filePath);
                 if (dateTimeInfo.HasValue)
                 {
+                    _logManager.LogDebug($"[ucOverrideNamesPanel] Extracted date '{dateTimeInfo.Value}' from file.");
                     string infoPath = CreateBaselineInfoFile(filePath, dateTimeInfo.Value);
                     if (!string.IsNullOrEmpty(infoPath))
                     {
-                        _logManager.LogEvent($"[OverrideNames] Baseline file created for: {Path.GetFileName(filePath)} -> {Path.GetFileName(infoPath)}");
+                        _logManager.LogEvent($"[ucOverrideNamesPanel] Baseline file created: {Path.GetFileName(filePath)} -> {Path.GetFileName(infoPath)}");
                     }
+                }
+                else
+                {
+                     _logManager.LogEvent($"[ucOverrideNamesPanel] Could not extract date information from file: {Path.GetFileName(filePath)}");
                 }
             }
             catch (Exception ex)
             {
-                _logManager.LogError($"[OverrideNames] Error processing stable file {filePath}: {ex.Message}");
+                _logManager.LogError($"[ucOverrideNamesPanel] Error processing stable file {filePath}: {ex.Message}");
             }
         }
 
         private void OnBaselineFileChanged(object sender, FileSystemEventArgs e)
         {
             if (!_isRunning || !File.Exists(e.FullPath)) return;
+            
+            _logManager.LogEvent($"[ucOverrideNamesPanel] Baseline file event '{e.ChangeType}' for: {Path.GetFileName(e.FullPath)}");
 
             var baselineData = ExtractBaselineData(new[] { e.FullPath });
-            if (baselineData.Count == 0) return;
+            if (baselineData.Count == 0)
+            {
+                 _logManager.LogDebug("[ucOverrideNamesPanel] Baseline file did not contain valid data. Skipping rename process.");
+                return;
+            }
 
             var targetFolders = _settingsManager.GetFoldersFromSection("[TargetComparePath]");
+            _logManager.LogDebug($"[ucOverrideNamesPanel] Found {targetFolders.Count} target folder(s) to process for renaming.");
             foreach (string targetFolder in targetFolders)
             {
                 if (Directory.Exists(targetFolder))
                 {
                     RenameAndProcessFilesInTargetFolder(targetFolder, baselineData);
                 }
+                else
+                {
+                     _logManager.LogError($"[ucOverrideNamesPanel] Target folder for renaming does not exist: {targetFolder}");
+                }
             }
         }
 
         private void RenameAndProcessFilesInTargetFolder(string folder, Dictionary<string, (string TimeInfo, string Prefix, string CInfo)> baselineData)
         {
+            _logManager.LogDebug($"[ucOverrideNamesPanel] Scanning folder '{folder}' for files to rename.");
             try
             {
                 foreach (var targetFile in Directory.GetFiles(folder))
@@ -330,7 +421,7 @@ namespace ITM_Agent.Panels
                         // Wafer Flat 데이터 파일 패턴(_WF_)을 포함하는지 확인
                         if (renamedFilePath.ToUpper().Contains("_WF_"))
                         {
-                            // ucUploadPanel에 즉시 처리를 요청
+                            _logManager.LogEvent($"[ucOverrideNamesPanel] WaferFlat data file '{Path.GetFileName(renamedFilePath)}' detected. Requesting immediate processing.");
                             _ucUploadPanel?.ProcessFileImmediately(renamedFilePath, "WaferFlat");
                         }
                     }
@@ -338,7 +429,7 @@ namespace ITM_Agent.Panels
             }
             catch (Exception ex)
             {
-                _logManager.LogError($"[OverrideNames] Error during renaming and processing in folder {folder}: {ex.Message}");
+                _logManager.LogError($"[ucOverrideNamesPanel] Error during renaming and processing in folder {folder}: {ex.Message}");
             }
         }
         #endregion
@@ -347,6 +438,7 @@ namespace ITM_Agent.Panels
 
         public string EnsureOverrideAndReturnPath(string originalPath, int timeoutMs = 180000)
         {
+            _logManager.LogEvent($"[ucOverrideNamesPanel] Ensuring override for '{Path.GetFileName(originalPath)}' with timeout {timeoutMs}ms.");
             var stopwatch = System.Diagnostics.Stopwatch.StartNew();
             string baselineFolder = Path.Combine(_settingsManager.GetBaseFolder(), "Baseline");
             string fileNameNoExt = Path.GetFileNameWithoutExtension(originalPath);
@@ -362,27 +454,37 @@ namespace ITM_Agent.Panels
                         var infoFiles = Directory.GetFiles(baselineFolder, searchPattern);
                         if (infoFiles.Any())
                         {
+                            _logManager.LogDebug($"[ucOverrideNamesPanel] Found matching .info file(s) for '{waferId}'.");
                             var baselineData = ExtractBaselineData(infoFiles);
                             string renamedPath = TryRenameTargetFile(originalPath, baselineData);
-                            return renamedPath ?? originalPath;
+                            if (renamedPath != null)
+                            {
+                                _logManager.LogEvent($"[ucOverrideNamesPanel] Override successful. Returning new path: '{renamedPath}'");
+                                return renamedPath;
+                            }
+                            // 이름 변경 조건에 맞지 않았지만 .info 파일은 찾았으므로 더 기다릴 필요 없음
+                             _logManager.LogDebug($"[ucOverrideNamesPanel] .info file found but rename conditions not met for '{originalPath}'. Returning original path.");
+                            return originalPath;
                         }
                     }
                 }
                 catch (Exception ex)
                 {
-                    _logManager.LogError($"[OverrideNames] Error while ensuring override for {originalPath}: {ex.Message}");
+                    _logManager.LogError($"[ucOverrideNamesPanel] Error while ensuring override for {originalPath}: {ex.Message}");
                 }
 
                 Thread.Sleep(500);
             }
 
-            _logManager.LogEvent($"[OverrideNames] Timeout waiting for .info file for {originalPath}. Skipping rename.");
+            stopwatch.Stop();
+            _logManager.LogEvent($"[ucOverrideNamesPanel] Timeout waiting for .info file for '{originalPath}'. Skipping rename.");
             return originalPath;
         }
 
         public void UpdateStatusOnRun(bool isRunning)
         {
             _isRunning = isRunning;
+            _logManager.LogEvent($"[ucOverrideNamesPanel] Run status updated. IsRunning: {isRunning}");
             SetControlsEnabled(!isRunning);
 
             if (isRunning) StartWatchers();
@@ -402,20 +504,21 @@ namespace ITM_Agent.Panels
             btn_SelectFolder.Enabled = isEnabled;
             btn_Remove.Enabled = isEnabled;
         }
+        
+        #endregion
 
+        #region --- Helper Methods (File Access, Parsing) ---
+        
         protected override void Dispose(bool disposing)
         {
             if (disposing)
             {
+                _logManager.LogDebug("[ucOverrideNamesPanel] Disposing panel and stopping watchers.");
                 StopWatchers();
-                // CS1503 오류 해결: 'components' 대신 'disposing' 전달
-                base.Dispose(disposing);
+                components?.Dispose();
             }
+            base.Dispose(disposing);
         }
-
-        #endregion
-
-        #region --- Helper Methods (File Access, Parsing) ---
 
         private class FileTrackingInfo
         {
@@ -426,30 +529,39 @@ namespace ITM_Agent.Panels
 
         private long GetFileSizeSafe(string filePath)
         {
-            try { if (File.Exists(filePath)) return new FileInfo(filePath).Length; } catch { }
+            try { if (File.Exists(filePath)) return new FileInfo(filePath).Length; }
+            catch (Exception ex) { _logManager.LogDebug($"[ucOverrideNamesPanel] Could not get file size for '{filePath}': {ex.Message}"); }
             return -1;
         }
 
         private DateTime GetLastWriteTimeSafe(string filePath)
         {
-            try { if (File.Exists(filePath)) return new FileInfo(filePath).LastWriteTime; } catch { }
+            try { if (File.Exists(filePath)) return new FileInfo(filePath).LastWriteTime; }
+            catch (Exception ex) { _logManager.LogDebug($"[ucOverrideNamesPanel] Could not get last write time for '{filePath}': {ex.Message}"); }
             return DateTime.MinValue;
         }
 
         private bool WaitForFileReady(string filePath, int maxRetries, int delayMs)
         {
+            _logManager.LogDebug($"[ucOverrideNamesPanel] Waiting for file to be ready: '{Path.GetFileName(filePath)}'");
             for (int i = 0; i < maxRetries; i++)
             {
                 try
                 {
                     using (File.Open(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                     {
+                        _logManager.LogDebug($"[ucOverrideNamesPanel] File is ready after {i} retries.");
                         return true;
                     }
                 }
                 catch (IOException) { Thread.Sleep(delayMs); }
-                catch { return false; }
+                catch (Exception ex)
+                {
+                     _logManager.LogError($"[ucOverrideNamesPanel] Unexpected error while waiting for file '{filePath}': {ex.Message}");
+                    return false;
+                }
             }
+            _logManager.LogDebug($"[ucOverrideNamesPanel] File was not ready after {maxRetries} retries.");
             return false;
         }
 
@@ -467,7 +579,7 @@ namespace ITM_Agent.Panels
             }
             catch (Exception ex)
             {
-                _logManager.LogDebug($"[OverrideNames] Could not extract date from {filePath}: {ex.Message}");
+                _logManager.LogError($"[ucOverrideNamesPanel] Could not read or extract date from '{filePath}': {ex.Message}");
             }
             return null;
         }
@@ -477,7 +589,7 @@ namespace ITM_Agent.Panels
             string baseFolder = _configPanel.BaseFolderPath;
             if (string.IsNullOrEmpty(baseFolder) || !Directory.Exists(baseFolder))
             {
-                _logManager.LogError("[OverrideNames] BaseFolder is not configured. Cannot create .info file.");
+                _logManager.LogError("[ucOverrideNamesPanel] BaseFolder is not configured. Cannot create .info file.");
                 return null;
             }
 
@@ -495,7 +607,7 @@ namespace ITM_Agent.Panels
             }
             catch (Exception ex)
             {
-                _logManager.LogError($"[OverrideNames] Failed to create .info file {newFilePath}: {ex.Message}");
+                _logManager.LogError($"[ucOverrideNamesPanel] Failed to create .info file '{newFilePath}': {ex.Message}");
                 return null;
             }
         }
@@ -515,22 +627,35 @@ namespace ITM_Agent.Panels
                     string prefix = match.Groups[2].Value;
                     string cInfo = match.Groups[3].Value;
                     baselineData[fileName] = (timeInfo, prefix, cInfo);
+                     _logManager.LogDebug($"[ucOverrideNamesPanel] Extracted baseline data from '{fileName}': Time={timeInfo}, Prefix={prefix}, CInfo={cInfo}");
+                }
+                else
+                {
+                     _logManager.LogDebug($"[ucOverrideNamesPanel] No baseline data pattern found in file name: '{fileName}'");
                 }
             }
             return baselineData;
         }
 
-        private string TryRenameTargetFile(string targetFile, Dictionary<string, (string TimeInfo, string Prefix, string CInfo)> baselineData)
+        private string TryRenameTargetFile(string targetFile, Dictionary<string, (string, string, string)> baselineData)
         {
+            if (!File.Exists(targetFile))
+            {
+                _logManager.LogDebug($"[ucOverrideNamesPanel] Target file for rename does not exist: '{targetFile}'");
+                return null;
+            }
+
             if (!WaitForFileReady(targetFile, 5, 200)) return null;
 
             string fileName = Path.GetFileName(targetFile);
+            _logManager.LogDebug($"[ucOverrideNamesPanel] Attempting to rename '{fileName}' using {baselineData.Count} baseline entries.");
 
             foreach (var data in baselineData.Values)
             {
                 // ★★★★★ 조치 사항: 누락된 'data.TimeInfo' 비교 조건 추가 ★★★★★
                 if (fileName.Contains(data.TimeInfo) && fileName.Contains(data.Prefix) && fileName.Contains("_#1_"))
                 {
+                     _logManager.LogDebug($"[ucOverrideNamesPanel] Match found for '{fileName}'. Criteria: Time='{data.TimeInfo}', Prefix='{data.Prefix}'.");
                     string newName = fileName.Replace("_#1_", $"_{data.CInfo}_");
                     string newPath = Path.Combine(Path.GetDirectoryName(targetFile), newName);
 
@@ -538,21 +663,22 @@ namespace ITM_Agent.Panels
                     {
                         if (File.Exists(newPath))
                         {
-                            _logManager.LogDebug($"[OverrideNames] Renamed file already exists, skipping: {newPath}");
-                            return newPath;
+                            _logManager.LogDebug($"[ucOverrideNamesPanel] Renamed file already exists, skipping: {newPath}");
+                            return newPath; // 이미 변경된 파일도 성공으로 간주하고 경로 반환
                         }
                         File.Move(targetFile, newPath);
-                        _logManager.LogEvent($"[OverrideNames] File renamed: {fileName} -> {newName}");
+                        _logManager.LogEvent($"[ucOverrideNamesPanel] File renamed successfully: {fileName} -> {newName}");
                         return newPath;
                     }
                     catch (Exception ex)
                     {
-                        _logManager.LogError($"[OverrideNames] Failed to rename {fileName} to {newName}: {ex.Message}");
-                        return null;
+                        _logManager.LogError($"[ucOverrideNamesPanel] Failed to rename {fileName} to {newName}: {ex.Message}");
+                        return null; // 이름 변경 실패
                     }
                 }
             }
-            return null;
+            _logManager.LogDebug($"[ucOverrideNamesPanel] No matching baseline data found to rename '{fileName}'.");
+            return null; // 매칭되는 규칙 없음
         }
 
         #endregion
