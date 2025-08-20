@@ -1,4 +1,4 @@
-﻿// ITM_Agent.Core/SettingsManager.cs
+// ITM_Agent.Core/SettingsManager.cs
 using ITM_Agent.Common.Interfaces;
 using System;
 using System.Collections.Generic;
@@ -55,10 +55,12 @@ namespace ITM_Agent.Core
         public SettingsManager(string settingsFilePath)
         {
             _settingsFilePath = settingsFilePath;
-            _logManager = new LogManager(Path.GetDirectoryName(settingsFilePath)); // LogManager 자체 생성
+            // LogManager를 직접 생성하여 사용합니다. (다른 곳에서 주입받지 않음)
+            _logManager = new LogManager(Path.GetDirectoryName(settingsFilePath));
             EnsureSettingsFileExists();
             // 초기 디버그 모드 상태 로드
             IsDebugMode = GetValueFromSection("Option", "DebugMode") == "1";
+            _logManager.LogDebug($"[SettingsManager] Initialized. Settings file path: '{_settingsFilePath}'");
         }
 
         private void EnsureSettingsFileExists()
@@ -67,11 +69,14 @@ namespace ITM_Agent.Core
             {
                 try
                 {
+                    _logManager.LogEvent($"[SettingsManager] Settings file not found. Creating a new one at '{_settingsFilePath}'.");
                     File.Create(_settingsFilePath).Close();
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Could not create settings file at {_settingsFilePath}: {ex.Message}");
+                    // LogManager가 아직 완전히 동작하지 않을 수 있으므로 Console에도 기록
+                    Console.WriteLine($"[CRITICAL] SettingsManager - Could not create settings file at {_settingsFilePath}: {ex.Message}");
+                    _logManager.LogError($"[SettingsManager] Could not create settings file at {_settingsFilePath}: {ex.Message}");
                 }
             }
         }
@@ -79,125 +84,185 @@ namespace ITM_Agent.Core
         #region --- General Methods ---
 
         public string GetEqpid() => GetValueFromSection("Eqpid", "Eqpid");
-        public void SetEqpid(string eqpid) => SetValueToSection("Eqpid", "Eqpid", eqpid);
+        public void SetEqpid(string eqpid)
+        {
+            _logManager.LogEvent($"[SettingsManager] Setting Eqpid to: {eqpid}");
+            SetValueToSection("Eqpid", "Eqpid", eqpid);
+        }
+
         public string GetApplicationType() => GetValueFromSection("Eqpid", "Type");
-        public void SetApplicationType(string type) => SetValueToSection("Eqpid", "Type", type);
+        public void SetApplicationType(string type)
+        {
+            _logManager.LogEvent($"[SettingsManager] Setting Application Type to: {type}");
+            SetValueToSection("Eqpid", "Type", type);
+        }
+
 
         public string GetValueFromSection(string section, string key)
         {
+            _logManager.LogDebug($"[SettingsManager] Reading value for Key='{key}' in Section='{section}'.");
             lock (_fileLock)
             {
-                if (!File.Exists(_settingsFilePath)) return null;
-
-                bool inSection = false;
-                foreach (string line in File.ReadLines(_settingsFilePath))
+                if (!File.Exists(_settingsFilePath))
                 {
-                    string trimmedLine = line.Trim();
-                    if (trimmedLine.Equals($"[{section}]", StringComparison.OrdinalIgnoreCase))
-                    {
-                        inSection = true;
-                        continue;
-                    }
-                    if (inSection)
-                    {
-                        if (trimmedLine.StartsWith("[")) break; // 다른 섹션 시작
+                    _logManager.LogDebug($"[SettingsManager] Settings file not found while reading. Returning null.");
+                    return null;
+                }
 
-                        string[] parts = line.Split(new[] { '=' }, 2);
-                        if (parts.Length == 2 && parts[0].Trim().Equals(key, StringComparison.OrdinalIgnoreCase))
+                try
+                {
+                    bool inSection = false;
+                    foreach (string line in File.ReadLines(_settingsFilePath))
+                    {
+                        string trimmedLine = line.Trim();
+                        if (trimmedLine.Equals($"[{section}]", StringComparison.OrdinalIgnoreCase))
                         {
-                            return parts[1].Trim();
+                            inSection = true;
+                            continue;
+                        }
+                        if (inSection)
+                        {
+                            if (trimmedLine.StartsWith("[")) break; // 다른 섹션 시작
+
+                            string[] parts = line.Split(new[] { '=' }, 2);
+                            if (parts.Length == 2 && parts[0].Trim().Equals(key, StringComparison.OrdinalIgnoreCase))
+                            {
+                                string value = parts[1].Trim();
+                                _logManager.LogDebug($"[SettingsManager] Value found: '{value}'.");
+                                return value;
+                            }
                         }
                     }
                 }
+                catch (Exception ex)
+                {
+                    _logManager.LogError($"[SettingsManager] Error reading file '{_settingsFilePath}': {ex.Message}");
+                }
             }
+            _logManager.LogDebug($"[SettingsManager] Key='{key}' not found in Section='{section}'. Returning null.");
             return null;
         }
 
         public void SetValueToSection(string section, string key, string value)
         {
+            _logManager.LogDebug($"[SettingsManager] Setting value for Key='{key}' to '{value}' in Section='{section}'.");
             lock (_fileLock)
             {
-                var lines = File.Exists(_settingsFilePath) ? File.ReadAllLines(_settingsFilePath).ToList() : new List<string>();
-                int sectionIndex = lines.FindIndex(l => l.Trim().Equals($"[{section}]", StringComparison.OrdinalIgnoreCase));
-
-                if (sectionIndex == -1)
+                try
                 {
-                    // 섹션이 없으면 새로 추가
-                    if (lines.Count > 0 && !string.IsNullOrWhiteSpace(lines.Last())) lines.Add("");
-                    lines.Add($"[{section}]");
-                    lines.Add($"{key} = {value}");
-                }
-                else
-                {
-                    // 섹션이 있으면 키를 찾아 업데이트하거나 새로 추가
-                    int keyIndex = -1;
-                    int searchEndIndex = lines.Count;
-                    for (int i = sectionIndex + 1; i < lines.Count; i++)
-                    {
-                        if (lines[i].Trim().StartsWith("["))
-                        {
-                            searchEndIndex = i;
-                            break;
-                        }
-                        if (lines[i].Trim().StartsWith($"{key} =", StringComparison.OrdinalIgnoreCase))
-                        {
-                            keyIndex = i;
-                            break;
-                        }
-                    }
+                    var lines = File.Exists(_settingsFilePath) ? File.ReadAllLines(_settingsFilePath).ToList() : new List<string>();
+                    int sectionIndex = lines.FindIndex(l => l.Trim().Equals($"[{section}]", StringComparison.OrdinalIgnoreCase));
 
-                    if (keyIndex != -1)
+                    if (sectionIndex == -1)
                     {
-                        lines[keyIndex] = $"{key} = {value}";
+                        _logManager.LogDebug($"[SettingsManager] Section '{section}' not found. Creating new section.");
+                        if (lines.Count > 0 && !string.IsNullOrWhiteSpace(lines.Last())) lines.Add("");
+                        lines.Add($"[{section}]");
+                        lines.Add($"{key} = {value}");
                     }
                     else
                     {
-                        lines.Insert(searchEndIndex, $"{key} = {value}");
+                        int keyIndex = -1;
+                        int searchEndIndex = lines.Count;
+                        for (int i = sectionIndex + 1; i < lines.Count; i++)
+                        {
+                            if (lines[i].Trim().StartsWith("["))
+                            {
+                                searchEndIndex = i;
+                                break;
+                            }
+                            if (lines[i].Trim().StartsWith($"{key}=", StringComparison.OrdinalIgnoreCase) || lines[i].Trim().StartsWith($"{key} =", StringComparison.OrdinalIgnoreCase))
+                            {
+                                keyIndex = i;
+                                break;
+                            }
+                        }
+
+                        if (keyIndex != -1)
+                        {
+                            _logManager.LogDebug($"[SettingsManager] Key '{key}' found. Updating value.");
+                            lines[keyIndex] = $"{key} = {value}";
+                        }
+                        else
+                        {
+                            _logManager.LogDebug($"[SettingsManager] Key '{key}' not found. Adding new key to section.");
+                            lines.Insert(searchEndIndex, $"{key} = {value}");
+                        }
                     }
+                    File.WriteAllLines(_settingsFilePath, lines);
                 }
-                File.WriteAllLines(_settingsFilePath, lines);
+                catch (Exception ex)
+                {
+                    _logManager.LogError($"[SettingsManager] Error writing to file '{_settingsFilePath}': {ex.Message}");
+                }
             }
         }
 
         public void RemoveKeyFromSection(string section, string key)
         {
+            _logManager.LogDebug($"[SettingsManager] Removing Key='{key}' from Section='{section}'.");
             lock (_fileLock)
             {
                 if (!File.Exists(_settingsFilePath)) return;
-                var lines = File.ReadAllLines(_settingsFilePath).ToList();
-
-                int sectionIndex = lines.FindIndex(l => l.Trim().Equals($"[{section}]", StringComparison.OrdinalIgnoreCase));
-                if (sectionIndex == -1) return;
-
-                for (int i = sectionIndex + 1; i < lines.Count; i++)
+                try
                 {
-                    if (lines[i].Trim().StartsWith("[")) break;
+                    var lines = File.ReadAllLines(_settingsFilePath).ToList();
 
-                    if (lines[i].Trim().StartsWith($"{key} =", StringComparison.OrdinalIgnoreCase))
+                    int sectionIndex = lines.FindIndex(l => l.Trim().Equals($"[{section}]", StringComparison.OrdinalIgnoreCase));
+                    if (sectionIndex == -1)
                     {
-                        lines.RemoveAt(i);
-                        break;
+                        _logManager.LogDebug($"[SettingsManager] Section '{section}' not found. Nothing to remove.");
+                        return;
                     }
+
+                    for (int i = sectionIndex + 1; i < lines.Count; i++)
+                    {
+                        if (lines[i].Trim().StartsWith("[")) break;
+
+                        if (lines[i].Trim().StartsWith($"{key}=", StringComparison.OrdinalIgnoreCase) || lines[i].Trim().StartsWith($"{key} =", StringComparison.OrdinalIgnoreCase))
+                        {
+                            lines.RemoveAt(i);
+                            _logManager.LogDebug($"[SettingsManager] Key '{key}' removed.");
+                            break;
+                        }
+                    }
+                    File.WriteAllLines(_settingsFilePath, lines);
                 }
-                File.WriteAllLines(_settingsFilePath, lines);
+                catch (Exception ex)
+                {
+                    _logManager.LogError($"[SettingsManager] Error processing file for key removal '{_settingsFilePath}': {ex.Message}");
+                }
             }
         }
 
         public void RemoveSection(string section)
         {
+            _logManager.LogDebug($"[SettingsManager] Removing Section='{section}'.");
             lock (_fileLock)
             {
                 if (!File.Exists(_settingsFilePath)) return;
-                var lines = File.ReadAllLines(_settingsFilePath).ToList();
+                try
+                {
+                    var lines = File.ReadAllLines(_settingsFilePath).ToList();
 
-                int sectionIndex = lines.FindIndex(l => l.Trim().Equals($"[{section}]", StringComparison.OrdinalIgnoreCase));
-                if (sectionIndex == -1) return;
+                    int sectionIndex = lines.FindIndex(l => l.Trim().Equals($"[{section}]", StringComparison.OrdinalIgnoreCase));
+                    if (sectionIndex == -1)
+                    {
+                        _logManager.LogDebug($"[SettingsManager] Section '{section}' not found. Nothing to remove.");
+                        return;
+                    }
 
-                int endIndex = lines.FindIndex(sectionIndex + 1, l => l.Trim().StartsWith("["));
-                if (endIndex == -1) endIndex = lines.Count;
+                    int endIndex = lines.FindIndex(sectionIndex + 1, l => l.Trim().StartsWith("["));
+                    if (endIndex == -1) endIndex = lines.Count;
 
-                lines.RemoveRange(sectionIndex, endIndex - sectionIndex);
-                File.WriteAllLines(_settingsFilePath, lines);
+                    lines.RemoveRange(sectionIndex, endIndex - sectionIndex);
+                    File.WriteAllLines(_settingsFilePath, lines);
+                    _logManager.LogDebug($"[SettingsManager] Section '{section}' removed.");
+                }
+                catch(Exception ex)
+                {
+                    _logManager.LogError($"[SettingsManager] Error processing file for section removal '{_settingsFilePath}': {ex.Message}");
+                }
             }
         }
 
@@ -206,78 +271,87 @@ namespace ITM_Agent.Core
         #region --- Folder & Regex Methods ---
 
         public string GetBaseFolder() => GetFoldersFromSection("[BaseFolder]").FirstOrDefault();
-        public void SetBaseFolder(string folderPath) => SetFoldersToSection("[BaseFolder]", new List<string> { folderPath });
+        public void SetBaseFolder(string folderPath)
+        {
+            _logManager.LogEvent($"[SettingsManager] Setting BaseFolder to: {folderPath}");
+            SetFoldersToSection("[BaseFolder]", new List<string> { folderPath });
+        }
+
 
         public List<string> GetFoldersFromSection(string section)
         {
             var folders = new List<string>();
+            _logManager.LogDebug($"[SettingsManager] Reading folders from Section='{section}'.");
             lock (_fileLock)
             {
                 if (!File.Exists(_settingsFilePath)) return folders;
 
-                bool inSection = false;
-                foreach (var line in File.ReadLines(_settingsFilePath))
+                try
                 {
-                    string trimmedLine = line.Trim();
-                    if (trimmedLine.Equals(section, StringComparison.OrdinalIgnoreCase))
+                    bool inSection = false;
+                    foreach (var line in File.ReadLines(_settingsFilePath))
                     {
-                        inSection = true;
-                        continue;
-                    }
-                    if (inSection)
-                    {
-                        if (trimmedLine.StartsWith("[")) break;
-                        if (!string.IsNullOrWhiteSpace(trimmedLine))
+                        string trimmedLine = line.Trim();
+                        if (trimmedLine.Equals(section, StringComparison.OrdinalIgnoreCase))
                         {
-                            folders.Add(trimmedLine);
+                            inSection = true;
+                            continue;
+                        }
+                        if (inSection)
+                        {
+                            if (trimmedLine.StartsWith("[")) break;
+                            if (!string.IsNullOrWhiteSpace(trimmedLine))
+                            {
+                                folders.Add(trimmedLine);
+                            }
                         }
                     }
                 }
+                catch(Exception ex)
+                {
+                    _logManager.LogError($"[SettingsManager] Error reading folders from section '{section}': {ex.Message}");
+                }
             }
+             _logManager.LogDebug($"[SettingsManager] Found {folders.Count} folder(s) in section '{section}'.");
             return folders;
         }
 
         public void SetFoldersToSection(string section, List<string> folders)
         {
+            _logManager.LogDebug($"[SettingsManager] Setting {folders.Count} folder(s) to Section='{section}'.");
             lock (_fileLock)
             {
-                var lines = File.ReadAllLines(_settingsFilePath).ToList();
-                int sectionIndex = lines.FindIndex(l => l.Trim().Equals(section, StringComparison.OrdinalIgnoreCase));
-
-                if (sectionIndex != -1)
+                try
                 {
-                    // 기존 섹션 제거
-                    int endIndex = lines.FindIndex(sectionIndex + 1, l => l.Trim().StartsWith("["));
-                    if (endIndex == -1) endIndex = lines.Count;
-                    lines.RemoveRange(sectionIndex, endIndex - sectionIndex);
+                    var lines = File.ReadAllLines(_settingsFilePath).ToList();
+                    int sectionIndex = lines.FindIndex(l => l.Trim().Equals(section, StringComparison.OrdinalIgnoreCase));
+
+                    if (sectionIndex != -1)
+                    {
+                         _logManager.LogDebug($"[SettingsManager] Existing section '{section}' found. Removing before re-adding.");
+                        int endIndex = lines.FindIndex(sectionIndex + 1, l => l.Trim().StartsWith("["));
+                        if (endIndex == -1) endIndex = lines.Count;
+                        lines.RemoveRange(sectionIndex, endIndex - sectionIndex);
+                    }
+
+                    if (lines.Count > 0 && !string.IsNullOrWhiteSpace(lines.Last())) lines.Add("");
+                    lines.Add(section);
+                    lines.AddRange(folders);
+
+                    File.WriteAllLines(_settingsFilePath, lines);
                 }
-
-                // 새 섹션 추가
-                if (lines.Count > 0 && !string.IsNullOrWhiteSpace(lines.Last())) lines.Add("");
-                lines.Add(section);
-                lines.AddRange(folders);
-
-                File.WriteAllLines(_settingsFilePath, lines);
+                catch(Exception ex)
+                {
+                    _logManager.LogError($"[SettingsManager] Error writing folders to section '{section}': {ex.Message}");
+                }
             }
         }
 
-        public Dictionary<string, string> GetRegexList()
-        {
-            var regexDict = new Dictionary<string, string>();
-            var lines = GetFoldersFromSection("[Regex]");
-            foreach (var line in lines)
-            {
-                var parts = line.Split(new[] { "->" }, 2, StringSplitOptions.None);
-                if (parts.Length == 2)
-                {
-                    regexDict[parts[0].Trim()] = parts[1].Trim();
-                }
-            }
-            return regexDict;
-        }
+        public Dictionary<string, string> GetRegexList() => GetSectionAsDictionary("[Regex]");
 
         public void SetRegexList(Dictionary<string, string> regexDict)
         {
+            _logManager.LogDebug($"[SettingsManager] Setting {regexDict.Count} regex entries to [Regex] section.");
             var lines = regexDict.Select(kvp => string.Format("{0} -> {1}", kvp.Key, kvp.Value)).ToList();
             SetFoldersToSection("[Regex]", lines);
         }
@@ -288,48 +362,59 @@ namespace ITM_Agent.Core
 
         public void ResetExceptEqpid()
         {
+            _logManager.LogEvent("[SettingsManager] Resetting all settings except Eqpid info.");
             string eqpid = GetEqpid();
             string type = GetApplicationType();
 
-            lock (_fileLock)
+            try
             {
-                File.WriteAllText(_settingsFilePath, string.Empty);
-            }
+                lock (_fileLock)
+                {
+                    File.WriteAllText(_settingsFilePath, string.Empty);
+                }
 
-            SetEqpid(eqpid);
-            SetApplicationType(type);
+                SetEqpid(eqpid);
+                SetApplicationType(type);
+                _logManager.LogEvent("[SettingsManager] Settings reset successfully.");
+            }
+            catch(Exception ex)
+            {
+                 _logManager.LogError($"[SettingsManager] Failed to reset settings file: {ex.Message}");
+            }
         }
 
         public void LoadFromFile(string filePath)
         {
+            _logManager.LogEvent($"[SettingsManager] Loading settings from external file: {filePath}");
             try
             {
                 lock (_fileLock)
                 {
                     File.Copy(filePath, _settingsFilePath, true);
                 }
-                _logManager.LogEvent($"Settings loaded from: {filePath}");
+                _logManager.LogEvent($"[SettingsManager] Settings loaded successfully from: {filePath}");
             }
             catch (Exception ex)
             {
-                _logManager.LogError($"Failed to load settings from {filePath}: {ex.Message}");
+                _logManager.LogError($"[SettingsManager] Failed to load settings from '{filePath}': {ex.Message}");
                 throw;
             }
         }
 
         public void SaveToFile(string filePath)
         {
+            _logManager.LogEvent($"[SettingsManager] Saving current settings to external file: {filePath}");
             try
             {
                 lock (_fileLock)
                 {
                     File.Copy(_settingsFilePath, filePath, true);
                 }
-                _logManager.LogEvent($"Settings saved to: {filePath}");
+                _logManager.LogEvent($"[SettingsManager] Settings saved successfully to: {filePath}");
             }
             catch (Exception ex)
             {
-                _logManager.LogError($"Failed to save settings to {filePath}: {ex.Message}");
+                _logManager.LogError($"[SettingsManager] Failed to save settings to '{filePath}': {ex.Message}");
                 throw;
             }
         }
@@ -337,37 +422,46 @@ namespace ITM_Agent.Core
         public Dictionary<string, string> GetSectionAsDictionary(string sectionName)
         {
             var dictionary = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            _logManager.LogDebug($"[SettingsManager] Reading section '{sectionName}' as a dictionary.");
             lock (_fileLock)
             {
                 if (!File.Exists(_settingsFilePath)) return dictionary;
 
-                bool inSection = false;
-                foreach (var line in File.ReadLines(_settingsFilePath))
+                try
                 {
-                    string trimmedLine = line.Trim();
-                    if (trimmedLine.Equals(sectionName, StringComparison.OrdinalIgnoreCase))
+                    bool inSection = false;
+                    foreach (var line in File.ReadLines(_settingsFilePath))
                     {
-                        inSection = true;
-                        continue;
-                    }
-
-                    if (inSection)
-                    {
-                        if (trimmedLine.StartsWith("[")) break; // 다른 섹션 시작 시 중단
-
-                        var parts = trimmedLine.Split(new[] { '=' }, 2);
-                        if (parts.Length == 2)
+                        string trimmedLine = line.Trim();
+                        if (trimmedLine.Equals(sectionName, StringComparison.OrdinalIgnoreCase))
                         {
-                            string key = parts[0].Trim();
-                            string value = parts[1].Trim();
-                            if (!string.IsNullOrEmpty(key))
+                            inSection = true;
+                            continue;
+                        }
+
+                        if (inSection)
+                        {
+                            if (trimmedLine.StartsWith("[")) break;
+
+                            var parts = trimmedLine.Split(new[] { '=' }, 2);
+                            if (parts.Length == 2)
                             {
-                                dictionary[key] = value;
+                                string key = parts[0].Trim();
+                                string value = parts[1].Trim();
+                                if (!string.IsNullOrEmpty(key))
+                                {
+                                    dictionary[key] = value;
+                                }
                             }
                         }
                     }
                 }
+                catch(Exception ex)
+                {
+                     _logManager.LogError($"[SettingsManager] Error reading section '{sectionName}' from file: {ex.Message}");
+                }
             }
+             _logManager.LogDebug($"[SettingsManager] Found {dictionary.Count} key-value pair(s) in section '{sectionName}'.");
             return dictionary;
         }
 
