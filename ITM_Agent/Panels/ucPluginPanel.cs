@@ -89,14 +89,14 @@ namespace ITM_Agent.Panels
                 MessageBox.Show("삭제할 플러그인을 선택하세요.", "알림", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
-            
+
             _logManager.LogEvent("[ucPluginPanel] Remove plugin button clicked.");
 
             string selectedText = lb_PluginList.SelectedItem.ToString();
             // "1. PluginName (v1.0.0)" 형식에서 PluginName 추출
             Match match = Regex.Match(selectedText, @"^\d+\.\s*(?<name>.*?)\s*\(v.*\)$");
             string pluginName = match.Success ? match.Groups["name"].Value.Trim() : selectedText.Split(' ')[1];
-            
+
             _logManager.LogDebug($"[ucPluginPanel] Selected plugin to remove: {pluginName}");
 
             if (MessageBox.Show($"플러그인 '{pluginName}'을(를) 삭제하시겠습니까?", "삭제 확인", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes)
@@ -140,7 +140,7 @@ namespace ITM_Agent.Panels
 
             if (File.Exists(destDllPath))
             {
-                 _logManager.LogDebug($"[ucPluginPanel] A DLL with the same name already exists in the Library folder.");
+                _logManager.LogDebug($"[ucPluginPanel] A DLL with the same name already exists in the Library folder.");
                 MessageBox.Show("동일한 이름의 DLL 파일이 'Library' 폴더에 이미 존재합니다.", "파일 중복", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
@@ -189,7 +189,7 @@ namespace ITM_Agent.Panels
                 // 목록 및 설정에서 제거
                 _loadedPlugins.Remove(pluginToRemove);
                 _settingsManager.RemoveKeyFromSection("RegPlugins", pluginToRemove.PluginName);
-                 _logManager.LogDebug($"[ucPluginPanel] Removed plugin from internal list and settings.ini.");
+                _logManager.LogDebug($"[ucPluginPanel] Removed plugin from internal list and settings.ini.");
 
                 // UI 갱신 및 변경 알림
                 UpdatePluginListDisplay();
@@ -214,7 +214,7 @@ namespace ITM_Agent.Panels
                 {
                     string sourceFile = Path.Combine(sourceDir, asmName.Name + ".dll");
                     string destFile = Path.Combine(destDir, asmName.Name + ".dll");
-                     _logManager.LogDebug($"[ucPluginPanel] Found a required referenced assembly: {asmName.Name}");
+                    _logManager.LogDebug($"[ucPluginPanel] Found a required referenced assembly: {asmName.Name}");
                     if (File.Exists(sourceFile) && !File.Exists(destFile))
                     {
                         File.Copy(sourceFile, destFile);
@@ -232,7 +232,7 @@ namespace ITM_Agent.Panels
         {
             string relativePath = Path.Combine("Library", Path.GetFileName(item.AssemblyPath));
             _settingsManager.SetValueToSection("RegPlugins", item.PluginName, relativePath);
-            _logManager.LogDebug($"[ucPluginPanel] Saved plugin setting: [{UploadSection}] {item.PluginName} = {relativePath}");
+            _logManager.LogDebug($"[ucPluginPanel] Saved plugin setting: [{RegPlugins}] {item.PluginName} = {relativePath}");
         }
 
         private void UpdatePluginListDisplay()
@@ -287,7 +287,7 @@ namespace ITM_Agent.Panels
                                     AssemblyPath = fullPath,
                                     PluginVersion = asm.GetName().Version.ToString()
                                 });
-                                 _logManager.LogDebug($"[ucPluginPanel] Successfully loaded plugin from settings: {pluginName}");
+                                _logManager.LogDebug($"[ucPluginPanel] Successfully loaded plugin from settings: {pluginName}");
                             }
                             else
                             {
@@ -313,7 +313,7 @@ namespace ITM_Agent.Panels
             _logManager.LogDebug("[ucPluginPanel] Setting loaded plugins from MainForm and updating UI.");
             _loadedPlugins.Clear();
             _loadedPlugins.AddRange(plugins);
-            
+
             UpdatePluginListDisplay();
 
             _logManager.LogDebug("[ucPluginPanel] Invoking PluginsChanged event to notify other panels.");
