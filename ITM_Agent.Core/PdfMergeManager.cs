@@ -1,4 +1,4 @@
-﻿// ITM_Agent.Core/PdfMergeManager.cs
+// ITM_Agent.Core/PdfMergeManager.cs
 using iText.IO.Image;
 using iText.Kernel.Geom;
 using iText.Kernel.Pdf;
@@ -50,8 +50,8 @@ namespace ITM_Agent.Core
                 _logManager.LogError($"[PdfMergeManager] Failed to update output folder. {ex.Message}");
                 throw ex;
             }
+            _logManager.LogEvent($"[PdfMergeManager] Output folder updated from '{_outputFolder}' to '{outputFolder}'.");
             _outputFolder = outputFolder;
-            _logManager.LogEvent($"[PdfMergeManager] Output folder updated to: {outputFolder}");
         }
 
         public void MergeImagesToPdf(List<string> imagePaths, string outputPdfPath)
@@ -62,16 +62,16 @@ namespace ITM_Agent.Core
                 return;
             }
 
+            _logManager.LogEvent($"[PdfMergeManager] Starting PDF merge for {imagePaths.Count} images. Output file: {IO.Path.GetFileName(outputPdfPath)}");
+
             try
             {
                 string pdfDirectory = IO.Path.GetDirectoryName(outputPdfPath);
                 if (!IO.Directory.Exists(pdfDirectory))
                 {
+                    _logManager.LogDebug($"[PdfMergeManager] Output directory does not exist. Creating directory: {pdfDirectory}");
                     IO.Directory.CreateDirectory(pdfDirectory);
-                    _logManager.LogEvent($"[PdfMergeManager] Created directory: {pdfDirectory}");
                 }
-
-                _logManager.LogEvent($"[PdfMergeManager] Starting PDF merge. Output: {IO.Path.GetFileName(outputPdfPath)}, Images: {imagePaths.Count}");
 
                 using (var writer = new PdfWriter(outputPdfPath))
                 using (var pdfDoc = new PdfDocument(writer))
@@ -82,8 +82,15 @@ namespace ITM_Agent.Core
                     for (int i = 0; i < imagePaths.Count; i++)
                     {
                         string imgPath = imagePaths[i];
+                        if (!IO.File.Exists(imgPath))
+                        {
+                            _logManager.LogError($"[PdfMergeManager] Image file not found, skipping: {imgPath}");
+                            continue;
+                        }
+
                         try
                         {
+                            _logManager.LogDebug($"[PdfMergeManager] Processing image {i + 1}/{imagePaths.Count}: {IO.Path.GetFileName(imgPath)}");
                             byte[] imgBytes = IO.File.ReadAllBytes(imgPath);
                             var imgData = ImageDataFactory.Create(imgBytes);
                             var img = new iTextImage(imgData);
@@ -102,23 +109,30 @@ namespace ITM_Agent.Core
                             img.SetHeight(h);
                             document.Add(img);
 
-                            _logManager.LogDebug($"[PdfMergeManager] Added page {i + 1}: {imgPath} ({w}x{h})");
+                            _logManager.LogDebug($"[PdfMergeManager] Added page {i + 1} from '{IO.Path.GetFileName(imgPath)}' with size {w}x{h}.");
                         }
                         catch (Exception exImg)
                         {
-                            _logManager.LogError($"[PdfMergeManager] Error adding image '{imgPath}': {exImg.Message} | InnerException: {exImg.InnerException?.Message}");
+                            _logManager.LogError($"[PdfMergeManager] Error adding image '{imgPath}' to PDF: {exImg.Message} | InnerException: {exImg.InnerException?.Message}");
+                            _logManager.LogDebug($"[PdfMergeManager] Image processing exception details: {exImg.ToString()}");
                         }
                     }
                     document.Close();
                 }
 
-                _logManager.LogEvent("[PdfMergeManager] PDF creation complete. Starting image file deletion.");
+                _logManager.LogEvent($"[PdfMergeManager] PDF creation complete for '{IO.Path.GetFileName(outputPdfPath)}'. Starting source image file deletion.");
                 DeleteMergedImages(imagePaths);
             }
             catch (Exception ex)
             {
-                _logManager.LogError($"[PdfMergeManager] A critical error occurred during PDF merge: {ex.Message} | InnerException: {ex.InnerException?.Message}");
-                throw;
+                _logManager.LogError($"[PdfMergeManager] A critical error occurred during PDF merge for '{outputPdfPath}': {ex.Message} | InnerException: {ex.InnerException?.Message}");
+                _logManager.LogDebug($"[PdfMergeManager] PDF merge exception details: {ex.ToString()}");
+                // 병합 실패 시 생성되었을 수 있는 불완전한 PDF 파일 삭제 시도
+                if (IO.File.Exists(outputPdfPath))
+                {
+                    try { IO.File.Delete(outputPdfPath); }
+                    catch(Exception delEx) { _logManager.LogError($"[PdfMergeManager] Failed to delete incomplete PDF file '{outputPdfPath}': {delEx.Message}"); }
+                }
             }
         }
 
@@ -126,19 +140,19 @@ namespace ITM_Agent.Core
         {
             int successCount = 0;
             int failCount = 0;
+            _logManager.LogDebug($"[PdfMergeManager] Starting deletion of {imagePaths.Count} source images.");
             foreach (string imgPath in imagePaths)
             {
                 if (DeleteFileWithRetry(imgPath, maxRetry: 5, delayMs: 300))
                 {
                     successCount++;
-                    _logManager.LogDebug($"[PdfMergeManager] Deleted image file: {imgPath}");
                 }
                 else
                 {
                     failCount++;
                 }
             }
-            _logManager.LogEvent($"[PdfMergeManager] Image deletion completed. Success: {successCount}, Failed: {failCount}");
+            _logManager.LogEvent($"[PdfMergeManager] Source image deletion completed. Success: {successCount}, Failed: {failCount}");
         }
 
         private bool DeleteFileWithRetry(string filePath, int maxRetry, int delayMs)
@@ -151,20 +165,28 @@ namespace ITM_Agent.Core
                     {
                         IO.File.SetAttributes(filePath, IO.FileAttributes.Normal);
                         IO.File.Delete(filePath);
+                        _logManager.LogDebug($"[PdfMergeManager] Deleted source image file: {filePath}");
+                    }
+                    else
+                    {
+                         _logManager.LogDebug($"[PdfMergeManager] Source image file already deleted, skipping: {filePath}");
                     }
                     return true;
                 }
                 catch (IO.IOException) when (attempt < maxRetry)
                 {
+                     _logManager.LogDebug($"[PdfMergeManager] Delete failed for '{filePath}' (IO Exception). Retrying in {delayMs}ms... (Attempt {attempt}/{maxRetry})");
                     Thread.Sleep(delayMs);
                 }
                 catch (Exception ex)
                 {
-                    _logManager.LogError($"[PdfMergeManager] Delete attempt {attempt} for {filePath} failed: {ex.Message}");
-                    if (attempt >= maxRetry) return false;
-                    Thread.Sleep(delayMs);
+                    _logManager.LogError($"[PdfMergeManager] Delete attempt {attempt} for '{filePath}' failed critically: {ex.Message}");
+                    _logManager.LogDebug($"[PdfMergeManager] File delete exception details: {ex.ToString()}");
+                    // 심각한 오류(예: 권한 문제)는 재시도하지 않고 즉시 실패 처리
+                    return false;
                 }
             }
+             _logManager.LogError($"[PdfMergeManager] Failed to delete file '{filePath}' after {maxRetry} retries.");
             return false;
         }
     }
