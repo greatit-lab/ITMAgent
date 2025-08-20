@@ -341,9 +341,9 @@ namespace ITM_Agent.Core
             var regexDict = new Dictionary<string, string>();
             _logManager.LogDebug("[SettingsManager] Reading regex list from [Regex] section.");
             var lines = GetFoldersFromSection("[Regex]");
-            froeach (var line in lines)
+            foreach (var line in lines)
             {
-                var parts = line.Split(new[] { "->" }, 2, stringSplitOptions.None);
+                var parts = line.Split(new[] { "->" }, 2, StringSplitOptions.None);
                 if (parts.Length == 2)
                 {
                     string key = parts[0].Trim();
