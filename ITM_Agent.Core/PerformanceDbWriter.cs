@@ -47,7 +47,7 @@ namespace ITM_Agent.Core
             lock (_instanceLock)
             {
                 if (_currentInstance == null) return;
-                
+
                 _currentInstance._logManager.LogEvent("[PerformanceDbWriter] Stopping service...");
                 PerformanceMonitor.Instance.StopSampling(); // 데이터 수집 중지
                 _currentInstance.Dispose();
@@ -151,7 +151,7 @@ namespace ITM_Agent.Core
                                     serverTimestamp.Minute,
                                     serverTimestamp.Second
                                 );
-                                
+
                                 _logManager.LogDebug($"[PerformanceDbWriter] Processing metric: ts={timestamp:s}, serv_ts={serverTimestampWithoutMilliseconds:s}");
 
                                 float cpuUsage = (float)Math.Round(metric.CpuUsage, 2);
@@ -173,7 +173,7 @@ namespace ITM_Agent.Core
                         _logManager.LogDebug($"[PerformanceDbWriter] DB transaction committed for {batch.Count} metrics.");
                     }
                 }
-                 _logManager.LogEvent($"[PerformanceDbWriter] Successfully flushed {batch.Count} metrics to DB.");
+                _logManager.LogEvent($"[PerformanceDbWriter] Successfully flushed {batch.Count} metrics to DB.");
             }
             catch (Exception ex)
             {
