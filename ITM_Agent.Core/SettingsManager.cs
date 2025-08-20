@@ -48,17 +48,11 @@ namespace ITM_Agent.Core
 
         #endregion
 
-        /// <summary>
-        /// SettingsManager의 새 인스턴스를 초기화합니다.
-        /// </summary>
-        /// <param name="settingsFilePath">관리할 Settings.ini 파일의 전체 경로입니다.</param>
         public SettingsManager(string settingsFilePath)
         {
             _settingsFilePath = settingsFilePath;
-            // LogManager를 직접 생성하여 사용합니다. (다른 곳에서 주입받지 않음)
             _logManager = new LogManager(Path.GetDirectoryName(settingsFilePath));
             EnsureSettingsFileExists();
-            // 초기 디버그 모드 상태 로드
             IsDebugMode = GetValueFromSection("Option", "DebugMode") == "1";
             _logManager.LogDebug($"[SettingsManager] Initialized. Settings file path: '{_settingsFilePath}'");
         }
@@ -74,7 +68,6 @@ namespace ITM_Agent.Core
                 }
                 catch (Exception ex)
                 {
-                    // LogManager가 아직 완전히 동작하지 않을 수 있으므로 Console에도 기록
                     Console.WriteLine($"[CRITICAL] SettingsManager - Could not create settings file at {_settingsFilePath}: {ex.Message}");
                     _logManager.LogError($"[SettingsManager] Could not create settings file at {_settingsFilePath}: {ex.Message}");
                 }
@@ -96,7 +89,6 @@ namespace ITM_Agent.Core
             _logManager.LogEvent($"[SettingsManager] Setting Application Type to: {type}");
             SetValueToSection("Eqpid", "Type", type);
         }
-
 
         public string GetValueFromSection(string section, string key)
         {
@@ -122,7 +114,7 @@ namespace ITM_Agent.Core
                         }
                         if (inSection)
                         {
-                            if (trimmedLine.StartsWith("[")) break; // 다른 섹션 시작
+                            if (trimmedLine.StartsWith("[")) break;
 
                             string[] parts = line.Split(new[] { '=' }, 2);
                             if (parts.Length == 2 && parts[0].Trim().Equals(key, StringComparison.OrdinalIgnoreCase))
@@ -207,7 +199,6 @@ namespace ITM_Agent.Core
                 try
                 {
                     var lines = File.ReadAllLines(_settingsFilePath).ToList();
-
                     int sectionIndex = lines.FindIndex(l => l.Trim().Equals($"[{section}]", StringComparison.OrdinalIgnoreCase));
                     if (sectionIndex == -1)
                     {
@@ -244,7 +235,6 @@ namespace ITM_Agent.Core
                 try
                 {
                     var lines = File.ReadAllLines(_settingsFilePath).ToList();
-
                     int sectionIndex = lines.FindIndex(l => l.Trim().Equals($"[{section}]", StringComparison.OrdinalIgnoreCase));
                     if (sectionIndex == -1)
                     {
@@ -259,7 +249,7 @@ namespace ITM_Agent.Core
                     File.WriteAllLines(_settingsFilePath, lines);
                     _logManager.LogDebug($"[SettingsManager] Section '{section}' removed.");
                 }
-                catch(Exception ex)
+                catch (Exception ex)
                 {
                     _logManager.LogError($"[SettingsManager] Error processing file for section removal '{_settingsFilePath}': {ex.Message}");
                 }
@@ -276,7 +266,6 @@ namespace ITM_Agent.Core
             _logManager.LogEvent($"[SettingsManager] Setting BaseFolder to: {folderPath}");
             SetFoldersToSection("[BaseFolder]", new List<string> { folderPath });
         }
-
 
         public List<string> GetFoldersFromSection(string section)
         {
@@ -307,12 +296,12 @@ namespace ITM_Agent.Core
                         }
                     }
                 }
-                catch(Exception ex)
+                catch (Exception ex)
                 {
                     _logManager.LogError($"[SettingsManager] Error reading folders from section '{section}': {ex.Message}");
                 }
             }
-             _logManager.LogDebug($"[SettingsManager] Found {folders.Count} folder(s) in section '{section}'.");
+            _logManager.LogDebug($"[SettingsManager] Found {folders.Count} folder(s) in section '{section}'.");
             return folders;
         }
 
@@ -328,7 +317,7 @@ namespace ITM_Agent.Core
 
                     if (sectionIndex != -1)
                     {
-                         _logManager.LogDebug($"[SettingsManager] Existing section '{section}' found. Removing before re-adding.");
+                        _logManager.LogDebug($"[SettingsManager] Existing section '{section}' found. Removing before re-adding.");
                         int endIndex = lines.FindIndex(sectionIndex + 1, l => l.Trim().StartsWith("["));
                         if (endIndex == -1) endIndex = lines.Count;
                         lines.RemoveRange(sectionIndex, endIndex - sectionIndex);
@@ -340,14 +329,35 @@ namespace ITM_Agent.Core
 
                     File.WriteAllLines(_settingsFilePath, lines);
                 }
-                catch(Exception ex)
+                catch (Exception ex)
                 {
                     _logManager.LogError($"[SettingsManager] Error writing folders to section '{section}': {ex.Message}");
                 }
             }
         }
 
-        public Dictionary<string, string> GetRegexList() => GetSectionAsDictionary("[Regex]");
+        public Dictionary<string, string> GetRegexList()
+        {
+            var regexDict = new Dictionary<string, string>();
+            _logManager.LogDebug("[SettingsManager] Reading regex list from [Regex] section.");
+            var lines = GetFoldersFromSection("[Regex]");
+            froeach (var line in lines)
+            {
+                var parts = line.Split(new[] { "->" }, 2, stringSplitOptions.None);
+                if (parts.Length == 2)
+                {
+                    string key = parts[0].Trim();
+                    string value = parts[1].Trim();
+                    regexDict[key] = value;
+                    _logManager.LogDebug($"[SettingsManager] Parsed regex entry: '{key}' -> '{value}'");
+                }
+                else
+                {
+                    _logManager.LogDebug($"[SettingsManager] Could not parse regex line: '{line}'");
+                }
+            }
+            return regexDict;
+        }
 
         public void SetRegexList(Dictionary<string, string> regexDict)
         {
@@ -377,9 +387,9 @@ namespace ITM_Agent.Core
                 SetApplicationType(type);
                 _logManager.LogEvent("[SettingsManager] Settings reset successfully.");
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
-                 _logManager.LogError($"[SettingsManager] Failed to reset settings file: {ex.Message}");
+                _logManager.LogError($"[SettingsManager] Failed to reset settings file: {ex.Message}");
             }
         }
 
@@ -456,12 +466,12 @@ namespace ITM_Agent.Core
                         }
                     }
                 }
-                catch(Exception ex)
+                catch (Exception ex)
                 {
-                     _logManager.LogError($"[SettingsManager] Error reading section '{sectionName}' from file: {ex.Message}");
+                    _logManager.LogError($"[SettingsManager] Error reading section '{sectionName}' from file: {ex.Message}");
                 }
             }
-             _logManager.LogDebug($"[SettingsManager] Found {dictionary.Count} key-value pair(s) in section '{sectionName}'.");
+            _logManager.LogDebug($"[SettingsManager] Found {dictionary.Count} key-value pair(s) in section '{sectionName}'.");
             return dictionary;
         }
 
