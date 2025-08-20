@@ -1,4 +1,4 @@
-﻿// ITM_Agent/Panels/ucPluginPanel.cs
+// ITM_Agent/Panels/ucPluginPanel.cs
 using ITM_Agent.Common.DTOs;
 using ITM_Agent.Common.Interfaces;
 using System;
@@ -32,9 +32,6 @@ namespace ITM_Agent.Panels
             _logManager = logManager ?? throw new ArgumentNullException(nameof(logManager));
 
             InitializeComponent();
-            // 수정된 부분:
-            // 생성자에서는 더 이상 동기적으로 플러그인을 로드하지 않습니다.
-            // LoadPluginsFromSettings(); // 이 라인을 제거하거나 주석 처리합니다.
         }
 
         #region --- Public Methods ---
@@ -49,6 +46,7 @@ namespace ITM_Agent.Panels
         /// </summary>
         public void UpdateStatusOnRun(bool isRunning)
         {
+            _logManager.LogDebug($"[ucPluginPanel] Updating control enabled status based on run state. IsRunning: {isRunning}");
             SetControlsEnabled(!isRunning);
         }
 
@@ -58,21 +56,27 @@ namespace ITM_Agent.Panels
 
         private void btn_PlugAdd_Click(object sender, EventArgs e)
         {
+            _logManager.LogEvent("[ucPluginPanel] Add plugin button clicked.");
             using (var dialog = new OpenFileDialog
             {
                 Filter = "DLL Files (*.dll)|*.dll|All Files (*.*)|*.*",
                 InitialDirectory = AppDomain.CurrentDomain.BaseDirectory
             })
             {
-                if (dialog.ShowDialog() != DialogResult.OK) return;
+                if (dialog.ShowDialog() != DialogResult.OK)
+                {
+                    _logManager.LogDebug("[ucPluginPanel] Add plugin dialog was canceled.");
+                    return;
+                }
 
                 try
                 {
+                    _logManager.LogDebug($"[ucPluginPanel] User selected plugin file: {dialog.FileName}");
                     AddPlugin(dialog.FileName);
                 }
                 catch (Exception ex)
                 {
-                    _logManager.LogError($"[ucPluginPanel] Failed to add plugin: {ex.Message}");
+                    _logManager.LogError($"[ucPluginPanel] Failed to add plugin '{dialog.FileName}': {ex.Message}");
                     MessageBox.Show($"플러그인 로드 중 오류가 발생했습니다: {ex.Message}", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             }
@@ -85,15 +89,24 @@ namespace ITM_Agent.Panels
                 MessageBox.Show("삭제할 플러그인을 선택하세요.", "알림", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
+            
+            _logManager.LogEvent("[ucPluginPanel] Remove plugin button clicked.");
 
-            // "1. PluginName (v1.0.0)" 형식에서 PluginName 추출
             string selectedText = lb_PluginList.SelectedItem.ToString();
+            // "1. PluginName (v1.0.0)" 형식에서 PluginName 추출
             Match match = Regex.Match(selectedText, @"^\d+\.\s*(?<name>.*?)\s*\(v.*\)$");
             string pluginName = match.Success ? match.Groups["name"].Value.Trim() : selectedText.Split(' ')[1];
+            
+            _logManager.LogDebug($"[ucPluginPanel] Selected plugin to remove: {pluginName}");
 
             if (MessageBox.Show($"플러그인 '{pluginName}'을(를) 삭제하시겠습니까?", "삭제 확인", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes)
             {
+                _logManager.LogDebug($"[ucPluginPanel] User confirmed removal of plugin '{pluginName}'.");
                 RemovePlugin(pluginName);
+            }
+            else
+            {
+                _logManager.LogDebug("[ucPluginPanel] Plugin removal was canceled by user.");
             }
         }
 
@@ -103,13 +116,18 @@ namespace ITM_Agent.Panels
 
         private void AddPlugin(string sourceDllPath)
         {
+            _logManager.LogDebug($"[ucPluginPanel] Starting AddPlugin logic for: {sourceDllPath}");
+
             // 1. Assembly 정보를 메모리에서 먼저 로드하여 유효성 검사
+            _logManager.LogDebug("[ucPluginPanel] Reading DLL file into memory for validation.");
             byte[] dllBytes = File.ReadAllBytes(sourceDllPath);
             Assembly asm = Assembly.Load(dllBytes);
             string pluginName = asm.GetName().Name;
+            _logManager.LogDebug($"[ucPluginPanel] Assembly loaded successfully. Plugin name: {pluginName}");
 
             if (_loadedPlugins.Any(p => p.PluginName.Equals(pluginName, StringComparison.OrdinalIgnoreCase)))
             {
+                _logManager.LogDebug($"[ucPluginPanel] Plugin '{pluginName}' is already registered.");
                 MessageBox.Show("이미 등록된 플러그인입니다.", "중복", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
@@ -118,15 +136,18 @@ namespace ITM_Agent.Panels
             string libraryFolder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Library");
             Directory.CreateDirectory(libraryFolder);
             string destDllPath = Path.Combine(libraryFolder, Path.GetFileName(sourceDllPath));
+            _logManager.LogDebug($"[ucPluginPanel] Destination path set to: {destDllPath}");
 
             if (File.Exists(destDllPath))
             {
+                 _logManager.LogDebug($"[ucPluginPanel] A DLL with the same name already exists in the Library folder.");
                 MessageBox.Show("동일한 이름의 DLL 파일이 'Library' 폴더에 이미 존재합니다.", "파일 중복", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
             File.Copy(sourceDllPath, destDllPath);
+            _logManager.LogDebug($"[ucPluginPanel] Copied plugin DLL to Library folder.");
 
-            // 3. 참조된 어셈블리(필요 시)도 함께 복사 (원본 코드 로직 유지)
+            // 3. 참조된 어셈블리(필요 시)도 함께 복사
             CopyReferencedAssemblies(asm, Path.GetDirectoryName(sourceDllPath), libraryFolder);
 
             // 4. 플러그인 정보 생성 및 목록에 추가
@@ -137,35 +158,43 @@ namespace ITM_Agent.Panels
                 PluginVersion = asm.GetName().Version.ToString()
             };
             _loadedPlugins.Add(newItem);
+            _logManager.LogDebug($"[ucPluginPanel] New plugin item created and added to the internal list.");
 
             // 5. 설정 저장 및 UI 갱신
             SavePluginSetting(newItem);
             UpdatePluginListDisplay();
             PluginsChanged?.Invoke(this, EventArgs.Empty); // 다른 패널에 변경 알림
-            _logManager.LogEvent($"[ucPluginPanel] Plugin added: {newItem}");
+            _logManager.LogEvent($"[ucPluginPanel] Plugin added successfully: {newItem}");
         }
 
         private void RemovePlugin(string pluginName)
         {
             var pluginToRemove = _loadedPlugins.FirstOrDefault(p => p.PluginName.Equals(pluginName, StringComparison.OrdinalIgnoreCase));
-            if (pluginToRemove == null) return;
+            if (pluginToRemove == null)
+            {
+                _logManager.LogError($"[ucPluginPanel] Could not find plugin '{pluginName}' in the loaded list for removal.");
+                return;
+            }
 
+            _logManager.LogDebug($"[ucPluginPanel] Starting RemovePlugin logic for: {pluginName}");
             try
             {
                 // DLL 파일 삭제
                 if (File.Exists(pluginToRemove.AssemblyPath))
                 {
                     File.Delete(pluginToRemove.AssemblyPath);
+                    _logManager.LogDebug($"[ucPluginPanel] Deleted plugin DLL: {pluginToRemove.AssemblyPath}");
                 }
 
                 // 목록 및 설정에서 제거
                 _loadedPlugins.Remove(pluginToRemove);
                 _settingsManager.RemoveKeyFromSection("RegPlugins", pluginToRemove.PluginName);
+                 _logManager.LogDebug($"[ucPluginPanel] Removed plugin from internal list and settings.ini.");
 
                 // UI 갱신 및 변경 알림
                 UpdatePluginListDisplay();
                 PluginsChanged?.Invoke(this, EventArgs.Empty);
-                _logManager.LogEvent($"[ucPluginPanel] Plugin removed: {pluginName}");
+                _logManager.LogEvent($"[ucPluginPanel] Plugin removed successfully: {pluginName}");
             }
             catch (Exception ex)
             {
@@ -176,7 +205,7 @@ namespace ITM_Agent.Panels
 
         private void CopyReferencedAssemblies(Assembly asm, string sourceDir, string destDir)
         {
-            // System.Text.Encoding.CodePages.dll 과 같은 필수 참조 DLL을 복사하는 로직
+            _logManager.LogDebug($"[ucPluginPanel] Checking for referenced assemblies to copy for plugin '{asm.GetName().Name}'.");
             string[] requiredDlls = { "System.Text.Encoding.CodePages.dll" };
 
             foreach (var asmName in asm.GetReferencedAssemblies())
@@ -185,9 +214,11 @@ namespace ITM_Agent.Panels
                 {
                     string sourceFile = Path.Combine(sourceDir, asmName.Name + ".dll");
                     string destFile = Path.Combine(destDir, asmName.Name + ".dll");
+                     _logManager.LogDebug($"[ucPluginPanel] Found a required referenced assembly: {asmName.Name}");
                     if (File.Exists(sourceFile) && !File.Exists(destFile))
                     {
                         File.Copy(sourceFile, destFile);
+                        _logManager.LogDebug($"[ucPluginPanel] Copied referenced assembly from '{sourceFile}' to '{destFile}'.");
                     }
                 }
             }
@@ -197,48 +228,16 @@ namespace ITM_Agent.Panels
 
         #region --- Settings & UI Helpers ---
 
-        private void LoadPluginsFromSettings()
-        {
-            _loadedPlugins.Clear();
-            var pluginEntries = _settingsManager.GetRegexList(); // [RegPlugins] 섹션을 읽어옴
-
-            foreach (var entry in pluginEntries)
-            {
-                string pluginName = entry.Key;
-                string relativePath = entry.Value;
-                string fullPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, relativePath);
-
-                if (File.Exists(fullPath))
-                {
-                    try
-                    {
-                        byte[] dllBytes = File.ReadAllBytes(fullPath);
-                        Assembly asm = Assembly.Load(dllBytes);
-
-                        _loadedPlugins.Add(new PluginListItem
-                        {
-                            PluginName = asm.GetName().Name,
-                            AssemblyPath = fullPath,
-                            PluginVersion = asm.GetName().Version.ToString()
-                        });
-                    }
-                    catch (Exception ex)
-                    {
-                        _logManager.LogError($"[ucPluginPanel] Failed to load plugin from settings ({pluginName}): {ex.Message}");
-                    }
-                }
-            }
-            UpdatePluginListDisplay();
-        }
-
         private void SavePluginSetting(PluginListItem item)
         {
             string relativePath = Path.Combine("Library", Path.GetFileName(item.AssemblyPath));
             _settingsManager.SetValueToSection("RegPlugins", item.PluginName, relativePath);
+            _logManager.LogDebug($"[ucPluginPanel] Saved plugin setting: [{UploadSection}] {item.PluginName} = {relativePath}");
         }
 
         private void UpdatePluginListDisplay()
         {
+            _logManager.LogDebug("[ucPluginPanel] Updating plugin list display in UI.");
             lb_PluginList.Items.Clear();
             for (int i = 0; i < _loadedPlugins.Count; i++)
             {
@@ -258,19 +257,14 @@ namespace ITM_Agent.Panels
             lb_PluginList.Enabled = enabled;
         }
 
-        /// <summary>
-        /// 설정 파일에서 플러그인 목록을 비동기적으로 로드하여 UI에 반영합니다.
-        /// </summary>
         public async Task<List<PluginListItem>> LoadPluginsAsync()
         {
+            _logManager.LogDebug("[ucPluginPanel] Starting to load plugins asynchronously from settings.");
             return await Task.Run(() =>
             {
                 var plugins = new List<PluginListItem>();
-
-                // *** 버그 수정: [RegPlugins] 섹션을 올바르게 읽도록 수정 ***
-                // 잘못된 GetRegexList() 호출 대신, 새로 추가한 GetSectionAsDictionary 메서드를 사용하여
-                // [RegPlugins] 섹션의 모든 "Key = Value" 라인을 정확하게 읽어옵니다.
                 var pluginEntries = _settingsManager.GetSectionAsDictionary("[RegPlugins]");
+                _logManager.LogDebug($"[ucPluginPanel] Found {pluginEntries.Count} plugin entries in settings.");
 
                 foreach (var entry in pluginEntries)
                 {
@@ -285,15 +279,15 @@ namespace ITM_Agent.Panels
                             byte[] dllBytes = File.ReadAllBytes(fullPath);
                             Assembly asm = Assembly.Load(dllBytes);
 
-                            // 실제 어셈블리 이름과 설정 파일의 키(플러그인 이름)가 일치하는지 확인
                             if (asm.GetName().Name.Equals(pluginName, StringComparison.OrdinalIgnoreCase))
                             {
                                 plugins.Add(new PluginListItem
                                 {
-                                    PluginName = pluginName, // 설정 파일의 키를 이름으로 사용
+                                    PluginName = pluginName,
                                     AssemblyPath = fullPath,
                                     PluginVersion = asm.GetName().Version.ToString()
                                 });
+                                 _logManager.LogDebug($"[ucPluginPanel] Successfully loaded plugin from settings: {pluginName}");
                             }
                             else
                             {
@@ -302,8 +296,12 @@ namespace ITM_Agent.Panels
                         }
                         catch (Exception ex)
                         {
-                            _logManager.LogError($"[ucPluginPanel] Failed to load plugin from settings ({pluginName}): {ex.Message}");
+                            _logManager.LogError($"[ucPluginPanel] Failed to load plugin assembly from '{fullPath}' (Key: {pluginName}): {ex.Message}");
                         }
+                    }
+                    else
+                    {
+                        _logManager.LogError($"[ucPluginPanel] Plugin DLL not found at path: {fullPath} (Key: {pluginName})");
                     }
                 }
                 return plugins;
@@ -312,18 +310,13 @@ namespace ITM_Agent.Panels
 
         public void SetLoadedPluginsAndUpdateUI(List<PluginListItem> plugins)
         {
-            // 1. MainForm으로부터 받은 플러그인 데이터로 내부 리스트를 갱신합니다.
+            _logManager.LogDebug("[ucPluginPanel] Setting loaded plugins from MainForm and updating UI.");
             _loadedPlugins.Clear();
             _loadedPlugins.AddRange(plugins);
-
-            // 2. 갱신된 내부 리스트를 기준으로 UI 리스트박스를 업데이트합니다.
+            
             UpdatePluginListDisplay();
 
-            // *** 버그 수정: 누락되었던 기능 복원 ***
-            // 3. UI 업데이트가 완료된 후, PluginsChanged 이벤트를 발생시켜
-            //    ucUploadPanel과 같은 다른 구독자(리스너)에게 플러그인 목록이
-            //    변경되었음을 명확하게 알립니다.
-            //    이 신호가 바로 ucUploadPanel이 자신의 콤보박스를 채우는 계기가 됩니다.
+            _logManager.LogDebug("[ucPluginPanel] Invoking PluginsChanged event to notify other panels.");
             PluginsChanged?.Invoke(this, EventArgs.Empty);
         }
 
