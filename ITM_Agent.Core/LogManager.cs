@@ -34,7 +34,7 @@ namespace ITM_Agent.Core
             {
                 Directory.CreateDirectory(_logFolderPath);
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
                 // 로그 폴더 생성 실패 시 콘솔에 기록. 애플리케이션 중단은 하지 않음.
                 Console.WriteLine($"[CRITICAL] LogManager - Failed to create log directory at '{_logFolderPath}': {ex.Message}");
@@ -148,7 +148,7 @@ namespace ITM_Agent.Core
                 var fileInfo = new FileInfo(filePath);
                 if (fileInfo.Length <= MAX_LOG_SIZE) return;
 
-                if(GlobalDebugEnabled)
+                if (GlobalDebugEnabled)
                     LogDebug($"[LogManager] Log file '{fileInfo.Name}' exceeds max size ({MAX_LOG_SIZE} bytes). Starting rotation.");
 
                 string directory = Path.GetDirectoryName(filePath);
@@ -162,9 +162,9 @@ namespace ITM_Agent.Core
                     rotatedPath = Path.Combine(directory, string.Format("{0}_{1}{2}", baseName, index++, extension));
                 } while (File.Exists(rotatedPath));
 
-                if(GlobalDebugEnabled)
+                if (GlobalDebugEnabled)
                     LogDebug($"[LogManager] Rotating '{fileInfo.Name}' to '{Path.GetFileName(rotatedPath)}'.");
-                
+
                 File.Move(filePath, rotatedPath);
             }
             catch (Exception ex)
@@ -185,7 +185,7 @@ namespace ITM_Agent.Core
         {
             try
             {
-                if(GlobalDebugEnabled)
+                if (GlobalDebugEnabled)
                     Console.WriteLine($"[DEBUG] LogManager - Broadcasting DebugMode ({enabled}) to all loaded plugins.");
 
                 var assemblies = AppDomain.CurrentDomain.GetAssemblies();
@@ -217,13 +217,13 @@ namespace ITM_Agent.Core
                             {
                                 try
                                 {
-                                    if(GlobalDebugEnabled)
+                                    if (GlobalDebugEnabled)
                                         Console.WriteLine($"[DEBUG] LogManager - Invoking {method.Name}({enabled}) on type {type.FullName}.");
                                     method.Invoke(null, new object[] { enabled });
                                 }
-                                catch(Exception ex)
+                                catch (Exception ex)
                                 {
-                                     Console.WriteLine($"[ERROR] LogManager - Failed to invoke debug method on {type.FullName}: {ex.Message}");
+                                    Console.WriteLine($"[ERROR] LogManager - Failed to invoke debug method on {type.FullName}: {ex.Message}");
                                 }
                             }
                         }
@@ -232,7 +232,7 @@ namespace ITM_Agent.Core
             }
             catch (Exception ex)
             {
-                 Console.WriteLine($"[ERROR] LogManager - An error occurred during plugin debug broadcast: {ex.Message}");
+                Console.WriteLine($"[ERROR] LogManager - An error occurred during plugin debug broadcast: {ex.Message}");
             }
         }
         #endregion
