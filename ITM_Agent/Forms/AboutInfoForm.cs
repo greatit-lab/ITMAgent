@@ -1,4 +1,4 @@
-﻿// ITM_Agent/Forms/AboutInfoForm.cs
+// ITM_Agent/Forms/AboutInfoForm.cs
 using ITM_Agent.Properties;
 using System;
 using System.Drawing;
@@ -56,7 +56,8 @@ namespace ITM_Agent.Forms
             catch (Exception ex)
             {
                 // 예기치 않은 오류 발생 시 시스템 기본 아이콘으로 대체
-                Console.WriteLine($"[AboutInfoForm] Failed to load icon: {ex.Message}");
+                // 이 폼은 LogManager를 주입받지 않으므로, Console로 간단히 기록합니다.
+                Console.WriteLine($"[ERROR] AboutInfoForm - Failed to load icon: {ex.Message}");
                 picIcon.Image = SystemIcons.Application.ToBitmap();
             }
         }
