@@ -74,7 +74,7 @@ namespace ITM_Agent.Core
                 // 2. BaseFolder 하위 모든 폴더의 날짜 패턴 파일 정리
                 CleanFolderRecursively(baseFolder, retentionDays);
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
                 // 최상위 레벨에서 예외 처리
                 _log.LogError($"[InfoCleaner] A critical error occurred during the cleaning execution: {ex.Message}");
@@ -92,7 +92,7 @@ namespace ITM_Agent.Core
                 _log.LogDebug($"[InfoCleaner] Baseline folder does not exist, skipping: {baselineDir}");
                 return;
             }
-            
+
             _log.LogDebug($"[InfoCleaner] Scanning Baseline folder: {baselineDir}");
             DateTime now = DateTime.Now;
 
@@ -140,7 +140,7 @@ namespace ITM_Agent.Core
                     {
                         if ((today - fileDate.Value.Date).TotalDays >= days)
                         {
-                             _log.LogDebug($"[InfoCleaner] Deleting old file '{name}' (Date: {fileDate.Value:yyyy-MM-dd}, Older than {days} days).");
+                            _log.LogDebug($"[InfoCleaner] Deleting old file '{name}' (Date: {fileDate.Value:yyyy-MM-dd}, Older than {days} days).");
                             TryDeleteFile(file, name);
                         }
                     }
