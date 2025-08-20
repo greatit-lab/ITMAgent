@@ -232,7 +232,7 @@ namespace ITM_Agent.Panels
         {
             string relativePath = Path.Combine("Library", Path.GetFileName(item.AssemblyPath));
             _settingsManager.SetValueToSection("RegPlugins", item.PluginName, relativePath);
-            _logManager.LogDebug($"[ucPluginPanel] Saved plugin setting: [{RegPlugins}] {item.PluginName} = {relativePath}");
+            _logManager.LogDebug($"[ucPluginPanel] Saved plugin setting: [RegPlugins] {item.PluginName} = {relativePath}");
         }
 
         private void UpdatePluginListDisplay()
