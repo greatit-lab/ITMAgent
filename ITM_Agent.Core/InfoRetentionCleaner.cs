@@ -1,4 +1,4 @@
-﻿// ITM_Agent.Core/InfoRetentionCleaner.cs
+// ITM_Agent.Core/InfoRetentionCleaner.cs
 using ITM_Agent.Common.Interfaces;
 using System;
 using System.Globalization;
@@ -24,7 +24,7 @@ namespace ITM_Agent.Core
         private static readonly Regex RxHyphen = new Regex(@"(?<!\d)(?<date>\d{4}-\d{2}-\d{2})(?!\d)", RegexOptions.Compiled);
         private static readonly Regex RxYmd = new Regex(@"(?<!\d)(?<ymd>\d{8})(?!\d)", RegexOptions.Compiled);
 
-        // 테스트를 위해 5분 간격으로 설정 (기존 코드 유지)
+        // 5분 간격으로 실행
         private const int SCAN_INTERVAL_MS = 5 * 60 * 1000;
 
         public InfoRetentionCleaner(ISettingsManager settings, ILogManager logger)
@@ -33,6 +33,7 @@ namespace ITM_Agent.Core
             _log = logger ?? throw new ArgumentNullException(nameof(logger));
 
             // 생성 시 즉시 1회 실행 후, 설정된 간격으로 주기적 실행
+            _log.LogEvent("[InfoCleaner] Service initialized. Starting cleaning timer.");
             _timer = new Timer(_ => ExecuteCleaning(), null, 0, SCAN_INTERVAL_MS);
         }
 
@@ -41,34 +42,58 @@ namespace ITM_Agent.Core
         /// </summary>
         private void ExecuteCleaning()
         {
-            if (!_settings.IsInfoDeletionEnabled) return;
+            _log.LogDebug("[InfoCleaner] Timer ticked. Executing cleaning task...");
+
+            if (!_settings.IsInfoDeletionEnabled)
+            {
+                _log.LogDebug("[InfoCleaner] Auto-deletion is disabled in settings. Skipping cleanup.");
+                return;
+            }
 
             int retentionDays = _settings.InfoRetentionDays;
-            if (retentionDays <= 0) return;
+            if (retentionDays <= 0)
+            {
+                _log.LogDebug($"[InfoCleaner] Retention days is set to {retentionDays}. Skipping cleanup.");
+                return;
+            }
 
             string baseFolder = _settings.GetBaseFolder();
             if (string.IsNullOrEmpty(baseFolder) || !Directory.Exists(baseFolder))
             {
-                _log.LogDebug("[InfoCleaner] BaseFolder is not set or does not exist. Skipping cleanup.");
+                _log.LogDebug($"[InfoCleaner] BaseFolder '{baseFolder}' is not set or does not exist. Skipping cleanup.");
                 return;
             }
 
-            _log.LogDebug($"[InfoCleaner] Starting cleanup task with {retentionDays} days retention.");
+            _log.LogEvent($"[InfoCleaner] Starting cleanup task with {retentionDays} days retention in folder '{baseFolder}'.");
 
-            // 1. Baseline 폴더의 .info 파일 정리
-            CleanBaselineFolder(baseFolder, retentionDays);
+            try
+            {
+                // 1. Baseline 폴더의 .info 파일 정리
+                CleanBaselineFolder(baseFolder, retentionDays);
 
-            // 2. BaseFolder 하위 모든 폴더의 날짜 패턴 파일 정리
-            CleanFolderRecursively(baseFolder, retentionDays);
+                // 2. BaseFolder 하위 모든 폴더의 날짜 패턴 파일 정리
+                CleanFolderRecursively(baseFolder, retentionDays);
+            }
+            catch(Exception ex)
+            {
+                // 최상위 레벨에서 예외 처리
+                _log.LogError($"[InfoCleaner] A critical error occurred during the cleaning execution: {ex.Message}");
+                _log.LogDebug($"[InfoCleaner] Cleaning execution exception details: {ex.ToString()}");
+            }
 
-            _log.LogDebug("[InfoCleaner] Cleanup task finished.");
+            _log.LogEvent("[InfoCleaner] Cleanup task finished.");
         }
 
         private void CleanBaselineFolder(string baseFolder, int days)
         {
             string baselineDir = Path.Combine(baseFolder, "Baseline");
-            if (!Directory.Exists(baselineDir)) return;
-
+            if (!Directory.Exists(baselineDir))
+            {
+                _log.LogDebug($"[InfoCleaner] Baseline folder does not exist, skipping: {baselineDir}");
+                return;
+            }
+            
+            _log.LogDebug($"[InfoCleaner] Scanning Baseline folder: {baselineDir}");
             DateTime now = DateTime.Now;
 
             try
@@ -77,12 +102,17 @@ namespace ITM_Agent.Core
                 {
                     string name = Path.GetFileName(file);
                     Match m = TsRegex.Match(name);
-                    if (!m.Success) continue;
+                    if (!m.Success)
+                    {
+                        _log.LogDebug($"[InfoCleaner] File '{name}' in Baseline does not match the expected timestamp pattern. Skipping.");
+                        continue;
+                    }
 
                     if (DateTime.TryParseExact(m.Groups["ts"].Value, "yyyyMMdd_HHmmss", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime ts))
                     {
                         if ((now - ts).TotalDays >= days)
                         {
+                            _log.LogDebug($"[InfoCleaner] Deleting old .info file '{name}' (Timestamp: {ts}, Older than {days} days).");
                             TryDeleteFile(file, name);
                         }
                     }
@@ -90,12 +120,14 @@ namespace ITM_Agent.Core
             }
             catch (Exception ex)
             {
-                _log.LogError($"[InfoCleaner] Error while cleaning Baseline folder: {ex.Message}");
+                _log.LogError($"[InfoCleaner] Error while cleaning Baseline folder '{baselineDir}': {ex.Message}");
+                _log.LogDebug($"[InfoCleaner] CleanBaselineFolder exception details: {ex.ToString()}");
             }
         }
 
         private void CleanFolderRecursively(string rootDir, int days)
         {
+            _log.LogDebug($"[InfoCleaner] Starting recursive scan in root folder: {rootDir}");
             DateTime today = DateTime.Today;
             try
             {
@@ -108,6 +140,7 @@ namespace ITM_Agent.Core
                     {
                         if ((today - fileDate.Value.Date).TotalDays >= days)
                         {
+                             _log.LogDebug($"[InfoCleaner] Deleting old file '{name}' (Date: {fileDate.Value:yyyy-MM-dd}, Older than {days} days).");
                             TryDeleteFile(file, name);
                         }
                     }
@@ -115,7 +148,8 @@ namespace ITM_Agent.Core
             }
             catch (Exception ex)
             {
-                _log.LogError($"[InfoCleaner] Error during recursive clean of {rootDir}: {ex.Message}");
+                _log.LogError($"[InfoCleaner] Error during recursive clean of '{rootDir}': {ex.Message}");
+                _log.LogDebug($"[InfoCleaner] CleanFolderRecursively exception details: {ex.ToString()}");
             }
         }
 
@@ -148,40 +182,32 @@ namespace ITM_Agent.Core
             {
                 if (!File.Exists(filePath))
                 {
-                    _log.LogDebug($"[InfoCleaner] Skip (already removed): {displayName}");
+                    _log.LogDebug($"[InfoCleaner] Skip deletion (file already removed): {displayName}");
                     return;
                 }
 
                 FileAttributes attrs = File.GetAttributes(filePath);
                 if ((attrs & FileAttributes.ReadOnly) == FileAttributes.ReadOnly)
                 {
+                    _log.LogDebug($"[InfoCleaner] File '{displayName}' is read-only. Attempting to remove read-only attribute.");
                     File.SetAttributes(filePath, attrs & ~FileAttributes.ReadOnly);
                 }
 
                 File.Delete(filePath);
-                _log.LogEvent($"[InfoCleaner] Deleted old file: {displayName}");
+                _log.LogEvent($"[InfoCleaner] Deleted old file successfully: {displayName}");
             }
-            catch (UnauthorizedAccessException)
+            catch (UnauthorizedAccessException uae)
             {
-                _log.LogError($"[InfoCleaner] Delete failed (Unauthorized): {displayName}. Retrying after setting attributes.");
-                try
-                {
-                    File.SetAttributes(filePath, FileAttributes.Normal);
-                    File.Delete(filePath);
-                    _log.LogEvent($"[InfoCleaner] Deleted old file after attribute change: {displayName}");
-                }
-                catch (Exception ex2)
-                {
-                    _log.LogError($"[InfoCleaner] Delete retry failed for {displayName}: {ex2.Message}");
-                }
+                _log.LogError($"[InfoCleaner] Delete failed for '{displayName}' (UnauthorizedAccessException): {uae.Message}. Check file/folder permissions.");
             }
-            catch (IOException ex)
+            catch (IOException ioe)
             {
-                _log.LogError($"[InfoCleaner] Delete failed (IO Exception) for {displayName}: {ex.Message}");
+                _log.LogError($"[InfoCleaner] Delete failed for '{displayName}' (IOException): {ioe.Message}. The file might be in use.");
             }
             catch (Exception ex)
             {
-                _log.LogError($"[InfoCleaner] An unexpected error occurred while deleting {displayName}: {ex.Message}");
+                _log.LogError($"[InfoCleaner] An unexpected error occurred while deleting '{displayName}': {ex.Message}");
+                _log.LogDebug($"[InfoCleaner] Delete file exception details: {ex.ToString()}");
             }
         }
 
@@ -190,6 +216,7 @@ namespace ITM_Agent.Core
         /// </summary>
         public void Dispose()
         {
+            _log.LogEvent("[InfoCleaner] Disposing service and stopping timer.");
             _timer?.Dispose();
         }
     }
