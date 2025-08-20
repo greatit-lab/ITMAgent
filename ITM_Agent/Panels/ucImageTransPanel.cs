@@ -160,7 +160,7 @@ namespace ITM_Agent.Panels
             _settingsManager.RemoveKeyFromSection("ImageTrans", "Target");
             if (_isRunning)
             {
-                 _logManager.LogDebug("[ucImageTransPanel] Stopping watcher due to folder clear.");
+                _logManager.LogDebug("[ucImageTransPanel] Stopping watcher due to folder clear.");
                 StopWatchingFolder();
             }
             MessageBox.Show("감시 폴더 설정이 초기화되었습니다.", "알림", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -244,7 +244,7 @@ namespace ITM_Agent.Panels
 
                 _logManager.LogEvent($"[ucImageTransPanel] Image folder watcher started for: {targetFolder}");
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
                 _logManager.LogError($"[ucImageTransPanel] Failed to create FileSystemWatcher for '{targetFolder}': {ex.Message}");
             }
@@ -276,7 +276,7 @@ namespace ITM_Agent.Panels
         private void OnImageFileEvent(object sender, FileSystemEventArgs e)
         {
             if (!_isRunning || !File.Exists(e.FullPath)) return;
-            
+
             _logManager.LogDebug($"[ucImageTransPanel] File event '{e.ChangeType}' detected for: {e.FullPath}");
 
             string fileNameWithoutExt = Path.GetFileNameWithoutExtension(e.FullPath);
@@ -338,7 +338,7 @@ namespace ITM_Agent.Panels
                     _logManager.LogDebug("[ucImageTransPanel] File queue is empty. Stability check timer stopped.");
                 }
             }
-            
+
             if (filesToProcess.Count == 0) return;
 
             var groupedFiles = filesToProcess
@@ -410,7 +410,7 @@ namespace ITM_Agent.Panels
             try
             {
                 var imageExtensions = new[] { ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp" };
-                
+
                 _logManager.LogDebug($"[ucImageTransPanel] Searching for images with base name '{baseName}' in '{watchFolder}'.");
                 var imageList = Directory.GetFiles(watchFolder, $"{baseName}_*.*")
                     .Where(p => imageExtensions.Contains(Path.GetExtension(p).ToLowerInvariant()))
@@ -443,7 +443,7 @@ namespace ITM_Agent.Panels
                 _logManager.LogError($"[ucImageTransPanel] PDF merge failed for baseName '{baseName}': {ex.Message}");
             }
         }
-        
+
         #endregion
 
         #region --- Public Control Methods ---
@@ -452,7 +452,7 @@ namespace ITM_Agent.Panels
         {
             _isRunning = isRunning;
             _logManager.LogEvent($"[ucImageTransPanel] Run status updated. IsRunning: {isRunning}");
-            
+
             SetControlsEnabled(!isRunning);
 
             if (isRunning)
