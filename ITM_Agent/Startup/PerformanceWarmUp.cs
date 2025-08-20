@@ -60,7 +60,7 @@ namespace ITM_Agent.Startup
                 // DB 서버에 연결할 수 없는 경우, 로그만 남기고 애플리케이션 시작은 계속 진행
                 Console.WriteLine($"[PerformanceWarmUp] Failed to warm up database connection pool: {ex.Message}");
             }
-            
+
             Console.WriteLine("[PerformanceWarmUp] Warmup process finished.");
         }
     }
