@@ -131,7 +131,7 @@ namespace ITM_Agent.Core
                 if (IO.File.Exists(outputPdfPath))
                 {
                     try { IO.File.Delete(outputPdfPath); }
-                    catch(Exception delEx) { _logManager.LogError($"[PdfMergeManager] Failed to delete incomplete PDF file '{outputPdfPath}': {delEx.Message}"); }
+                    catch (Exception delEx) { _logManager.LogError($"[PdfMergeManager] Failed to delete incomplete PDF file '{outputPdfPath}': {delEx.Message}"); }
                 }
             }
         }
@@ -169,13 +169,13 @@ namespace ITM_Agent.Core
                     }
                     else
                     {
-                         _logManager.LogDebug($"[PdfMergeManager] Source image file already deleted, skipping: {filePath}");
+                        _logManager.LogDebug($"[PdfMergeManager] Source image file already deleted, skipping: {filePath}");
                     }
                     return true;
                 }
                 catch (IO.IOException) when (attempt < maxRetry)
                 {
-                     _logManager.LogDebug($"[PdfMergeManager] Delete failed for '{filePath}' (IO Exception). Retrying in {delayMs}ms... (Attempt {attempt}/{maxRetry})");
+                    _logManager.LogDebug($"[PdfMergeManager] Delete failed for '{filePath}' (IO Exception). Retrying in {delayMs}ms... (Attempt {attempt}/{maxRetry})");
                     Thread.Sleep(delayMs);
                 }
                 catch (Exception ex)
@@ -186,7 +186,7 @@ namespace ITM_Agent.Core
                     return false;
                 }
             }
-             _logManager.LogError($"[PdfMergeManager] Failed to delete file '{filePath}' after {maxRetry} retries.");
+            _logManager.LogError($"[PdfMergeManager] Failed to delete file '{filePath}' after {maxRetry} retries.");
             return false;
         }
     }
