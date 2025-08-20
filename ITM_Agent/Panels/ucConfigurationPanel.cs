@@ -1,4 +1,4 @@
-﻿// ITM_Agent/Panels/ucConfigurationPanel.cs
+// ITM_Agent/Panels/ucConfigurationPanel.cs
 using ITM_Agent.Common.Interfaces;
 using ITM_Agent.Forms;
 using ITM_Agent.Properties;
@@ -13,6 +13,7 @@ namespace ITM_Agent.Panels
     public partial class ucConfigurationPanel : UserControl
     {
         private readonly ISettingsManager _settingsManager;
+        private readonly ILogManager _logManager;
         public event Action<bool> ReadyStatusChanged;
 
         // *** 버그 수정: 연쇄적인 이벤트 발생을 막기 위한 플래그 ***
@@ -20,20 +21,20 @@ namespace ITM_Agent.Panels
 
         #region --- Fields ---
         public event Action SettingsChanged;
-        public event Action ListSelectionChanged;
 
         // Settings.ini의 섹션 이름을 상수로 관리
         private const string TargetFoldersSection = "[TargetFolders]";
         private const string ExcludeFoldersSection = "[ExcludeFolders]";
-        private const string BaseFolderSection = "[BaseFolder]";
 
         #endregion
 
         #region --- Initialization ---
 
-        public ucConfigurationPanel(ISettingsManager settingsManager)
+        public ucConfigurationPanel(ISettingsManager settingsManager, ILogManager logManager)
         {
             _settingsManager = settingsManager ?? throw new ArgumentNullException(nameof(settingsManager));
+            _logManager = logManager ?? throw new ArgumentNullException(nameof(logManager));
+
             InitializeComponent();
             RegisterEventHandlers();
             LoadDataFromSettings();
@@ -41,11 +42,10 @@ namespace ITM_Agent.Panels
 
         private void RegisterEventHandlers()
         {
-            // 모든 설정 변경 버튼들은 각자의 로직 수행 후 OnSettingsChanged() 호출
-            btn_TargetFolder.Click += (s, e) => AddFolder(TargetFoldersSection, lb_TargetList);
-            btn_TargetRemove.Click += (s, e) => RemoveSelectedFolders(TargetFoldersSection, lb_TargetList);
-            btn_ExcludeFolder.Click += (s, e) => AddFolder(ExcludeFoldersSection, lb_ExcludeList);
-            btn_ExcludeRemove.Click += (s, e) => RemoveSelectedFolders(ExcludeFoldersSection, lb_ExcludeList);
+            btn_TargetFolder.Click += (s, e) => AddFolder(TargetFoldersSection, lb_TargetList, "Target");
+            btn_TargetRemove.Click += (s, e) => RemoveSelectedFolders(TargetFoldersSection, lb_TargetList, "Target");
+            btn_ExcludeFolder.Click += (s, e) => AddFolder(ExcludeFoldersSection, lb_ExcludeList, "Exclude");
+            btn_ExcludeRemove.Click += (s, e) => RemoveSelectedFolders(ExcludeFoldersSection, lb_ExcludeList, "Exclude");
             btn_BaseFolder.Click += Btn_BaseFolder_Click;
             btn_RegAdd.Click += Btn_RegAdd_Click;
             btn_RegEdit.Click += Btn_RegEdit_Click;
@@ -61,20 +61,20 @@ namespace ITM_Agent.Panels
 
         #region --- Data Loading and UI Refresh ---
 
-        /// <summary>
-        /// ISettingsManager로부터 모든 설정 값을 읽어와 UI에 표시합니다.
-        /// </summary>
         public void LoadDataFromSettings()
         {
+            _logManager.LogDebug("[ucConfigurationPanel] Loading all data from settings.");
             LoadFolders(TargetFoldersSection, lb_TargetList);
             LoadFolders(ExcludeFoldersSection, lb_ExcludeList);
             LoadBaseFolder();
             LoadRegexFromSettings();
-            OnSettingsChanged();
+            OnSettingsChanged(); // 로드 후 상태 갱신
+            _logManager.LogDebug("[ucConfigurationPanel] Finished loading data from settings.");
         }
 
         private void LoadFolders(string section, ListBox listBox)
         {
+            _logManager.LogDebug($"[ucConfigurationPanel] Loading folders for section '{section}' into '{listBox.Name}'.");
             listBox.Items.Clear();
             var folders = _settingsManager.GetFoldersFromSection(section);
             for (int i = 0; i < folders.Count; i++)
@@ -85,21 +85,25 @@ namespace ITM_Agent.Panels
 
         private void LoadBaseFolder()
         {
+            _logManager.LogDebug("[ucConfigurationPanel] Loading BaseFolder.");
             var baseFolder = _settingsManager.GetBaseFolder();
             if (!string.IsNullOrEmpty(baseFolder))
             {
                 lb_BaseFolder.Text = baseFolder;
                 lb_BaseFolder.ForeColor = Color.Black;
+                _logManager.LogDebug($"[ucConfigurationPanel] BaseFolder is '{baseFolder}'.");
             }
             else
             {
                 lb_BaseFolder.Text = Resources.MSG_BASE_NOT_SELECTED;
                 lb_BaseFolder.ForeColor = Color.Red;
+                _logManager.LogDebug("[ucConfigurationPanel] BaseFolder is not set.");
             }
         }
 
         private void LoadRegexFromSettings()
         {
+            _logManager.LogDebug("[ucConfigurationPanel] Loading regex list from settings.");
             lb_RegexList.Items.Clear();
             var regexDict = _settingsManager.GetRegexList();
             int index = 1;
@@ -109,26 +113,30 @@ namespace ITM_Agent.Panels
             }
         }
 
-        /// <summary>
-        /// 외부에서 UI를 새로고침할 필요가 있을 때 호출합니다.
-        /// </summary>
-        public void RefreshUI() => LoadDataFromSettings();
+        public void RefreshUI()
+        {
+            _logManager.LogEvent("[ucConfigurationPanel] RefreshUI called externally.");
+            LoadDataFromSettings();
+        }
 
         #endregion
 
         #region --- Folder Management Logic ---
 
-        private void AddFolder(string section, ListBox listBox)
+        private void AddFolder(string section, ListBox listBox, string folderType)
         {
+            _logManager.LogEvent($"[ucConfigurationPanel] '{folderType}' folder add button clicked.");
             using (var folderDialog = new FolderBrowserDialog())
             {
                 if (folderDialog.ShowDialog() == DialogResult.OK)
                 {
                     string selectedFolder = folderDialog.SelectedPath;
+                    _logManager.LogDebug($"[ucConfigurationPanel] User selected folder: {selectedFolder}");
                     var currentFolders = _settingsManager.GetFoldersFromSection(section);
 
                     if (currentFolders.Any(f => f.Equals(selectedFolder, StringComparison.OrdinalIgnoreCase)))
                     {
+                        _logManager.LogDebug($"[ucConfigurationPanel] Folder '{selectedFolder}' already exists in the list.");
                         MessageBox.Show("해당 폴더는 이미 등록되어 있습니다.", "알림", MessageBoxButtons.OK, MessageBoxIcon.Information);
                         return;
                     }
@@ -137,11 +145,16 @@ namespace ITM_Agent.Panels
                     _settingsManager.SetFoldersToSection(section, currentFolders);
                     LoadFolders(section, listBox);
                     OnSettingsChanged();
+                    _logManager.LogEvent($"[ucConfigurationPanel] Added new {folderType} folder: {selectedFolder}");
+                }
+                else
+                {
+                    _logManager.LogDebug("[ucConfigurationPanel] Folder dialog was canceled.");
                 }
             }
         }
 
-        private void RemoveSelectedFolders(string section, ListBox listBox)
+        private void RemoveSelectedFolders(string section, ListBox listBox, string folderType)
         {
             if (listBox.SelectedItems.Count == 0)
             {
@@ -149,23 +162,32 @@ namespace ITM_Agent.Panels
                 return;
             }
 
+            _logManager.LogEvent($"[ucConfigurationPanel] '{folderType}' folder remove button clicked.");
             if (MessageBox.Show("선택한 폴더를 정말 삭제하시겠습니까?", "삭제 확인", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes)
             {
                 var foldersToRemove = listBox.SelectedItems.Cast<string>()
                     .Select(item => item.Substring(item.IndexOf(' ') + 1))
-                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                    .ToList();
+                
+                _logManager.LogDebug($"[ucConfigurationPanel] User confirmed removal of {foldersToRemove.Count} folder(s).");
 
                 var currentFolders = _settingsManager.GetFoldersFromSection(section);
-                currentFolders.RemoveAll(f => foldersToRemove.Contains(f));
+                currentFolders.RemoveAll(f => foldersToRemove.Contains(f, StringComparer.OrdinalIgnoreCase));
 
                 _settingsManager.SetFoldersToSection(section, currentFolders);
                 LoadFolders(section, listBox);
                 OnSettingsChanged();
+                _logManager.LogEvent($"[ucConfigurationPanel] Removed {foldersToRemove.Count} {folderType} folder(s).");
+            }
+            else
+            {
+                _logManager.LogDebug("[ucConfigurationPanel] Folder removal was canceled by user.");
             }
         }
 
         private void Btn_BaseFolder_Click(object sender, EventArgs e)
         {
+            _logManager.LogEvent("[ucConfigurationPanel] BaseFolder select button clicked.");
             using (var folderDialog = new FolderBrowserDialog())
             {
                 string currentPath = _settingsManager.GetBaseFolder();
@@ -176,6 +198,11 @@ namespace ITM_Agent.Panels
                     _settingsManager.SetBaseFolder(folderDialog.SelectedPath);
                     LoadBaseFolder();
                     OnSettingsChanged();
+                    _logManager.LogEvent($"[ucConfigurationPanel] BaseFolder set to: {folderDialog.SelectedPath}");
+                }
+                else
+                {
+                    _logManager.LogDebug("[ucConfigurationPanel] BaseFolder dialog was canceled.");
                 }
             }
         }
@@ -186,6 +213,7 @@ namespace ITM_Agent.Panels
 
         private void Btn_RegAdd_Click(object sender, EventArgs e)
         {
+            _logManager.LogEvent("[ucConfigurationPanel] Regex Add button clicked.");
             using (var form = new RegexConfigForm(_settingsManager.GetBaseFolder()))
             {
                 if (form.ShowDialog() == DialogResult.OK)
@@ -195,43 +223,46 @@ namespace ITM_Agent.Panels
                     _settingsManager.SetRegexList(regexDict);
                     LoadRegexFromSettings();
                     OnSettingsChanged();
+                    _logManager.LogEvent($"[ucConfigurationPanel] Added new regex: '{form.RegexPattern}' -> '{form.TargetFolder}'");
                 }
             }
         }
 
         private void Btn_RegEdit_Click(object sender, EventArgs e)
         {
+            _logManager.LogEvent("[ucConfigurationPanel] Regex Edit button clicked.");
             if (lb_RegexList.SelectedItem == null)
             {
                 MessageBox.Show("수정할 항목을 선택하세요.", "경고", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
-            // 수정된 부분:
-            // 리스트박스의 선택된 문자열("1. regex -> C:\path")을 파싱하여
-            // 기존 정규식과 폴더 경로를 추출합니다.
             var (oldRegex, oldFolder) = ParseSelectedRegexItem(lb_RegexList.SelectedItem.ToString());
-            if (oldRegex == null) return; // 파싱 실패 시 중단
+            if (oldRegex == null)
+            {
+                _logManager.LogError($"[ucConfigurationPanel] Failed to parse selected regex item: '{lb_RegexList.SelectedItem}'");
+                return;
+            }
 
             using (var form = new RegexConfigForm(_settingsManager.GetBaseFolder()) { RegexPattern = oldRegex, TargetFolder = oldFolder })
             {
                 if (form.ShowDialog() == DialogResult.OK)
                 {
+                    _logManager.LogDebug($"[ucConfigurationPanel] Editing regex. Old: '{oldRegex}', New: '{form.RegexPattern}'");
                     var regexDict = _settingsManager.GetRegexList();
-
-                    // 키(정규식)가 변경되었을 수 있으므로, 기존 키는 삭제하고 새로운 키로 값을 저장합니다.
                     regexDict.Remove(oldRegex);
                     regexDict[form.RegexPattern] = form.TargetFolder;
-
                     _settingsManager.SetRegexList(regexDict);
-                    LoadRegexFromSettings(); // UI 목록 새로고침
-                    OnSettingsChanged();     // MainForm에 상태 변경 알림
+                    LoadRegexFromSettings();
+                    OnSettingsChanged();
+                    _logManager.LogEvent($"[ucConfigurationPanel] Edited regex: '{form.RegexPattern}' -> '{form.TargetFolder}'");
                 }
             }
         }
 
         private void Btn_RegRemove_Click(object sender, EventArgs e)
         {
+            _logManager.LogEvent("[ucConfigurationPanel] Regex Remove button clicked.");
             if (lb_RegexList.SelectedItem == null)
             {
                 MessageBox.Show("삭제할 항목을 선택하세요.", "경고", MessageBoxButtons.OK, MessageBoxIcon.Warning);
@@ -240,49 +271,58 @@ namespace ITM_Agent.Panels
 
             if (MessageBox.Show("선택한 항목을 삭제하시겠습니까?", "삭제 확인", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes)
             {
-                // 수정된 부분:
-                // 선택된 항목에서 삭제할 정규식(키)만 추출합니다.
                 var (regexToRemove, _) = ParseSelectedRegexItem(lb_RegexList.SelectedItem.ToString());
-                if (regexToRemove == null) return;
+                if (regexToRemove == null)
+                {
+                    _logManager.LogError($"[ucConfigurationPanel] Failed to parse selected regex item for removal: '{lb_RegexList.SelectedItem}'");
+                    return;
+                }
 
+                _logManager.LogDebug($"[ucConfigurationPanel] User confirmed removal of regex: '{regexToRemove}'");
                 var regexDict = _settingsManager.GetRegexList();
                 if (regexDict.Remove(regexToRemove))
                 {
                     _settingsManager.SetRegexList(regexDict);
-                    LoadRegexFromSettings(); // UI 목록 새로고침
-                    OnSettingsChanged();     // MainForm에 상태 변경 알림
+                    LoadRegexFromSettings();
+                    OnSettingsChanged();
+                    _logManager.LogEvent($"[ucConfigurationPanel] Removed regex: '{regexToRemove}'");
                 }
+            }
+            else
+            {
+                _logManager.LogDebug("[ucConfigurationPanel] Regex removal was canceled by user.");
             }
         }
 
         private (string regex, string folder) ParseSelectedRegexItem(string item)
         {
-            // 수정된 부분:
-            // "->"를 기준으로 문자열을 분리하고, 앞뒤 공백을 제거하여
-            // 정확한 정규식(key)과 폴더(value)를 추출합니다.
-            int arrowIndex = item.IndexOf("->");
-            if (arrowIndex < 0) return (null, null);
+            try
+            {
+                int arrowIndex = item.IndexOf("->");
+                if (arrowIndex < 0) return (null, null);
 
-            // "N. " 부분을 제거하고 정규식 추출
-            string regexPart = item.Substring(item.IndexOf(' ') + 1, arrowIndex - item.IndexOf(' ') - 2).Trim();
-            string folderPart = item.Substring(arrowIndex + 2).Trim();
+                string regexPart = item.Substring(item.IndexOf(' ') + 1, arrowIndex - item.IndexOf(' ') - 2).Trim();
+                string folderPart = item.Substring(arrowIndex + 2).Trim();
 
-            return (regexPart, folderPart);
+                return (regexPart, folderPart);
+            }
+            catch (Exception ex)
+            {
+                _logManager.LogError($"[ucConfigurationPanel] Error parsing regex item '{item}': {ex.Message}");
+                return (null, null);
+            }
         }
 
         #endregion
 
         #region --- Public Methods & Properties for MainForm ---
 
-        /// <summary>
-        /// Run 버튼을 활성화하기 위한 모든 조건이 충족되었는지 확인합니다.
-        /// </summary>
         public bool IsReadyToRun()
         {
             bool hasTarget = lb_TargetList.Items.Count > 0;
-            // BaseFolder 텍스트가 리소스 문자열이 아닌 유효한 경로인지 확인
             bool hasBase = !string.IsNullOrEmpty(_settingsManager.GetBaseFolder()) && lb_BaseFolder.Text != Resources.MSG_BASE_NOT_SELECTED;
             bool hasRegex = lb_RegexList.Items.Count > 0;
+            _logManager.LogDebug($"[ucConfigurationPanel] IsReadyToRun check: hasTarget={hasTarget}, hasBase={hasBase}, hasRegex={hasRegex}. Result={hasTarget && hasBase && hasRegex}");
             return hasTarget && hasBase && hasRegex;
         }
 
@@ -290,17 +330,14 @@ namespace ITM_Agent.Panels
 
         public List<string> GetRegexTargetFolders() => _settingsManager.GetRegexList().Values.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 
-        /// <summary>
-        /// MainForm의 Run/Stop 상태에 따라 UI 컨트롤의 활성화 상태를 업데이트합니다.
-        /// </summary>
         public void UpdateStatusOnRun(bool isRunning)
         {
+            _logManager.LogDebug($"[ucConfigurationPanel] Updating control enabled status. IsRunning: {isRunning}");
             SetControlsEnabled(!isRunning);
         }
 
         private void SetControlsEnabled(bool isEnabled)
         {
-            // *** 버그 수정: 연쇄 이벤트 방지 플래그 설정 ***
             _isUpdatingControls = true;
             try
             {
@@ -318,16 +355,17 @@ namespace ITM_Agent.Panels
             }
             finally
             {
-                _isUpdatingControls = false; // 플래그 해제
+                _isUpdatingControls = false;
             }
         }
 
         private void OnSettingsChanged()
         {
-            // *** 버그 수정: 컨트롤이 프로그래밍 방식으로 업데이트 중일 때는 이벤트 발생 방지 ***
             if (_isUpdatingControls) return;
 
+            _logManager.LogDebug("[ucConfigurationPanel] Settings changed, invoking events.");
             SettingsChanged?.Invoke();
+            ReadyStatusChanged?.Invoke(IsReadyToRun());
         }
 
         #endregion
