@@ -1,4 +1,4 @@
-﻿// ITM_Agent/Panels/ucImageTransPanel.cs
+// ITM_Agent/Panels/ucImageTransPanel.cs
 using ITM_Agent.Common.Interfaces;
 using ITM_Agent.Core;
 using System;
@@ -68,14 +68,16 @@ namespace ITM_Agent.Panels
 
         private void LoadAllSettings()
         {
+            _logManager.LogDebug("[ucImageTransPanel] Loading all settings.");
             LoadRegexFolderPaths();
             LoadWaitTimes();
             LoadOutputFolder();
-            _logManager.LogEvent("[ucImageTransPanel] All settings loaded.");
+            _logManager.LogDebug("[ucImageTransPanel] All settings loaded.");
         }
 
         public void LoadRegexFolderPaths()
         {
+            _logManager.LogDebug("[ucImageTransPanel] Loading regex folder paths for target image folder dropdown.");
             cb_TargetImageFolder.Items.Clear();
             var regexFolders = _configPanel.GetRegexTargetFolders();
             cb_TargetImageFolder.Items.AddRange(regexFolders.ToArray());
@@ -84,6 +86,7 @@ namespace ITM_Agent.Panels
             if (!string.IsNullOrEmpty(selectedPath) && cb_TargetImageFolder.Items.Contains(selectedPath))
             {
                 cb_TargetImageFolder.SelectedItem = selectedPath;
+                _logManager.LogDebug($"[ucImageTransPanel] Loaded target image folder: {selectedPath}");
             }
             else
             {
@@ -93,29 +96,38 @@ namespace ITM_Agent.Panels
 
         public void LoadWaitTimes()
         {
+            _logManager.LogDebug("[ucImageTransPanel] Loading wait times for dropdown.");
             cb_WaitTime.Items.Clear();
             cb_WaitTime.Items.AddRange(new object[] { "30", "60", "120", "180", "240", "300" });
 
             string savedWaitTime = _settingsManager.GetValueFromSection("ImageTrans", "Wait");
             cb_WaitTime.SelectedItem = savedWaitTime;
             if (cb_WaitTime.SelectedIndex < 0) cb_WaitTime.SelectedIndex = 0;
+            _logManager.LogDebug($"[ucImageTransPanel] Loaded wait time: {cb_WaitTime.SelectedItem}");
         }
 
         private void LoadOutputFolder()
         {
+            _logManager.LogDebug("[ucImageTransPanel] Loading output folder setting.");
             string outputFolder = _settingsManager.GetValueFromSection("ImageTrans", "SaveFolder");
             if (!string.IsNullOrEmpty(outputFolder) && Directory.Exists(outputFolder))
             {
                 lb_ImageSaveFolder.Text = outputFolder;
                 _pdfMergeManager.UpdateOutputFolder(outputFolder);
+                _logManager.LogDebug($"[ucImageTransPanel] Loaded output folder: {outputFolder}");
             }
             else
             {
                 lb_ImageSaveFolder.Text = "출력 폴더가 설정되지 않았습니다.";
+                _logManager.LogDebug("[ucImageTransPanel] Output folder is not set or does not exist.");
             }
         }
 
-        public void RefreshUI() => LoadAllSettings();
+        public void RefreshUI()
+        {
+            _logManager.LogEvent("[ucImageTransPanel] RefreshUI called externally.");
+            LoadAllSettings();
+        }
 
         #endregion
 
@@ -123,11 +135,17 @@ namespace ITM_Agent.Panels
 
         private void Btn_SetFolder_Click(object sender, EventArgs e)
         {
+            _logManager.LogEvent("[ucImageTransPanel] Set target folder button clicked.");
             if (cb_TargetImageFolder.SelectedItem is string selectedFolder)
             {
                 _settingsManager.SetValueToSection("ImageTrans", "Target", selectedFolder);
                 MessageBox.Show($"감시 폴더가 설정되었습니다: {selectedFolder}", "알림", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                if (_isRunning) StartWatchingFolder();
+                _logManager.LogEvent($"[ucImageTransPanel] Target folder set to: {selectedFolder}");
+                if (_isRunning)
+                {
+                    _logManager.LogDebug("[ucImageTransPanel] Restarting watcher due to folder change.");
+                    StartWatchingFolder();
+                }
             }
             else
             {
@@ -137,33 +155,44 @@ namespace ITM_Agent.Panels
 
         private void Btn_FolderClear_Click(object sender, EventArgs e)
         {
+            _logManager.LogEvent("[ucImageTransPanel] Clear target folder button clicked.");
             cb_TargetImageFolder.SelectedIndex = -1;
             _settingsManager.RemoveKeyFromSection("ImageTrans", "Target");
-            if (_isRunning) StopWatchingFolder();
+            if (_isRunning)
+            {
+                 _logManager.LogDebug("[ucImageTransPanel] Stopping watcher due to folder clear.");
+                StopWatchingFolder();
+            }
             MessageBox.Show("감시 폴더 설정이 초기화되었습니다.", "알림", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
         private void Btn_SetTime_Click(object sender, EventArgs e)
         {
+            _logManager.LogEvent("[ucImageTransPanel] Set wait time button clicked.");
             if (cb_WaitTime.SelectedItem is string selectedWaitTime)
             {
                 _settingsManager.SetValueToSection("ImageTrans", "Wait", selectedWaitTime);
                 MessageBox.Show($"대기 시간이 {selectedWaitTime}초로 설정되었습니다.", "알림", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                _logManager.LogEvent($"[ucImageTransPanel] Wait time set to: {selectedWaitTime} seconds.");
             }
         }
 
         private void Btn_TimeClear_Click(object sender, EventArgs e)
         {
-            cb_WaitTime.SelectedIndex = 0;
+            _logManager.LogEvent("[ucImageTransPanel] Clear wait time button clicked.");
+            cb_WaitTime.SelectedIndex = 0; // 기본값 "30"
             _settingsManager.SetValueToSection("ImageTrans", "Wait", "30");
             MessageBox.Show("대기 시간이 기본값(30초)으로 초기화되었습니다.", "알림", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            _logManager.LogEvent("[ucImageTransPanel] Wait time cleared to default (30 seconds).");
         }
 
         private void Btn_SelectOutputFolder_Click(object sender, EventArgs e)
         {
+            _logManager.LogEvent("[ucImageTransPanel] Select output folder button clicked.");
             string baseFolder = _configPanel.BaseFolderPath;
             if (string.IsNullOrEmpty(baseFolder) || !Directory.Exists(baseFolder))
             {
+                _logManager.LogError("[ucImageTransPanel] Base Folder is not configured. Cannot select output folder.");
                 MessageBox.Show("기준 폴더(Base Folder)가 먼저 설정되어야 합니다.", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
@@ -176,6 +205,11 @@ namespace ITM_Agent.Panels
                     _settingsManager.SetValueToSection("ImageTrans", "SaveFolder", folderDialog.SelectedPath);
                     _pdfMergeManager.UpdateOutputFolder(folderDialog.SelectedPath);
                     MessageBox.Show("PDF 출력 폴더가 설정되었습니다.", "알림", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    _logManager.LogEvent($"[ucImageTransPanel] PDF output folder set to: {folderDialog.SelectedPath}");
+                }
+                else
+                {
+                    _logManager.LogDebug("[ucImageTransPanel] Select output folder dialog was canceled.");
                 }
             }
         }
@@ -186,36 +220,52 @@ namespace ITM_Agent.Panels
 
         private void StartWatchingFolder()
         {
-            StopWatchingFolder();
+            StopWatchingFolder(); // 기존 감시자 정리
 
             string targetFolder = _settingsManager.GetValueFromSection("ImageTrans", "Target");
             if (string.IsNullOrEmpty(targetFolder) || !Directory.Exists(targetFolder))
             {
-                _logManager.LogError("[ucImageTransPanel] 감시 대상 폴더가 설정되지 않았거나 존재하지 않아 감시를 시작할 수 없습니다.");
+                _logManager.LogError($"[ucImageTransPanel] Cannot start watcher: Target folder '{targetFolder}' is not set or does not exist.");
                 return;
             }
 
-            _imageWatcher = new FileSystemWatcher(targetFolder)
+            try
             {
-                NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite,
-                IncludeSubdirectories = false,
-                EnableRaisingEvents = true
-            };
+                _imageWatcher = new FileSystemWatcher(targetFolder)
+                {
+                    NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite,
+                    IncludeSubdirectories = false,
+                    EnableRaisingEvents = true
+                };
 
-            _imageWatcher.Created += OnImageFileEvent;
-            _imageWatcher.Changed += OnImageFileEvent;
-            _imageWatcher.Renamed += OnImageFileEvent;
+                _imageWatcher.Created += OnImageFileEvent;
+                _imageWatcher.Changed += OnImageFileEvent;
+                _imageWatcher.Renamed += OnImageFileEvent;
 
-            _logManager.LogEvent($"[ucImageTransPanel] 이미지 폴더 감시 시작: {targetFolder}");
+                _logManager.LogEvent($"[ucImageTransPanel] Image folder watcher started for: {targetFolder}");
+            }
+            catch(Exception ex)
+            {
+                _logManager.LogError($"[ucImageTransPanel] Failed to create FileSystemWatcher for '{targetFolder}': {ex.Message}");
+            }
         }
 
         private void StopWatchingFolder()
         {
-            _imageWatcher?.Dispose();
-            _imageWatcher = null;
+            if (_imageWatcher != null)
+            {
+                _imageWatcher.EnableRaisingEvents = false;
+                _imageWatcher.Dispose();
+                _imageWatcher = null;
+                _logManager.LogEvent("[ucImageTransPanel] Image folder watcher stopped.");
+            }
 
-            _checkTimer?.Dispose();
-            _checkTimer = null;
+            if (_checkTimer != null)
+            {
+                _checkTimer.Dispose();
+                _checkTimer = null;
+                _logManager.LogDebug("[ucImageTransPanel] File stability check timer stopped.");
+            }
 
             lock (_changedFilesLock)
             {
@@ -226,12 +276,24 @@ namespace ITM_Agent.Panels
         private void OnImageFileEvent(object sender, FileSystemEventArgs e)
         {
             if (!_isRunning || !File.Exists(e.FullPath)) return;
+            
+            _logManager.LogDebug($"[ucImageTransPanel] File event '{e.ChangeType}' detected for: {e.FullPath}");
 
             string fileNameWithoutExt = Path.GetFileNameWithoutExtension(e.FullPath);
 
-            if (fileNameWithoutExt.Contains("_#1_")) return;
-            if (!Regex.IsMatch(fileNameWithoutExt, @"_(?<page>\d+)$")) return;
+            // 병합 대상이 아닌 파일 형식 필터링 (예: 임시 파일)
+            if (fileNameWithoutExt.Contains("_#1_"))
+            {
+                _logManager.LogDebug($"[ucImageTransPanel] File '{e.FullPath}' skipped because it contains '_#1_'.");
+                return;
+            }
+            if (!Regex.IsMatch(fileNameWithoutExt, @"_(?<page>\d+)$"))
+            {
+                _logManager.LogDebug($"[ucImageTransPanel] File '{e.FullPath}' skipped because it does not match the page number pattern.");
+                return;
+            }
 
+            _logManager.LogDebug($"[ucImageTransPanel] File '{e.FullPath}' is a valid target. Adding to changed files list.");
             lock (_changedFilesLock)
             {
                 _changedFiles[e.FullPath] = DateTime.Now;
@@ -239,7 +301,7 @@ namespace ITM_Agent.Panels
 
             if (_checkTimer == null)
             {
-                // CS0104 오류 해결: System.Threading.Timer를 명시적으로 사용
+                _logManager.LogDebug("[ucImageTransPanel] Stability check timer started.");
                 _checkTimer = new System.Threading.Timer(_ => CheckFilesForMerging(), null, 1000, 1000);
             }
         }
@@ -250,6 +312,8 @@ namespace ITM_Agent.Panels
 
             int waitSec = GetWaitSecondsSafely();
             if (waitSec <= 0) return;
+
+            _logManager.LogDebug($"[ucImageTransPanel] Checking for stable files with wait time: {waitSec}s. {_changedFiles.Count} files in queue.");
 
             var now = DateTime.Now;
             var filesToProcess = new List<string>();
@@ -267,12 +331,15 @@ namespace ITM_Agent.Panels
 
                 filesToProcess.ForEach(p => _changedFiles.Remove(p));
 
-                if (_changedFiles.Count == 0)
+                if (_changedFiles.Count == 0 && _checkTimer != null)
                 {
-                    _checkTimer?.Dispose();
+                    _checkTimer.Dispose();
                     _checkTimer = null;
+                    _logManager.LogDebug("[ucImageTransPanel] File queue is empty. Stability check timer stopped.");
                 }
             }
+            
+            if (filesToProcess.Count == 0) return;
 
             var groupedFiles = filesToProcess
                 .Select(p => new {
@@ -284,51 +351,41 @@ namespace ITM_Agent.Panels
 
             foreach (var group in groupedFiles)
             {
+                _logManager.LogEvent($"[ucImageTransPanel] File group '{group.Key}' is stable. Starting merge process for {group.Count()} file(s).");
                 MergeImagesForBaseName(group.Key);
             }
         }
 
-        /// <summary>
-        /// 크로스 스레드 오류를 방지하며 안전하게 cb_WaitTime 컨트롤의 선택된 값을 초 단위로 반환합니다.
-        /// </summary>
         private int GetWaitSecondsSafely()
         {
-            // *** 수정된 부분: 크로스 스레드 오류를 해결하는 핵심 로직입니다. ***
-            // 현재 스레드가 UI 스레드가 아닌지 (InvokeRequired) 확인합니다.
             if (this.InvokeRequired)
             {
-                // UI 스레드가 아니라면, Invoke를 통해 UI 스레드에 작업을 위임하고
-                // 그 결과(대기 시간 값)를 안전하게 반환받습니다.
-                return (int)this.Invoke((Func<int>)GetWaitSecondsSafely);
+                try
+                {
+                    return (int)this.Invoke((Func<int>)GetWaitSecondsSafely);
+                }
+                catch (ObjectDisposedException)
+                {
+                    _logManager.LogDebug("[ucImageTransPanel] Control was disposed, cannot get wait time from UI.");
+                    return 30; // 폼이 닫히는 중일 때 기본값 반환
+                }
             }
             else
             {
-                // 이미 UI 스레드라면, 컨트롤에 직접 안전하게 접근합니다.
                 if (cb_WaitTime.SelectedItem is string selectedValue && int.TryParse(selectedValue, out int seconds))
                 {
                     return seconds;
                 }
-
-                // UI에서 값을 가져오지 못한 경우, 설정 파일에서 값을 읽어옵니다.
                 if (int.TryParse(_settingsManager.GetValueFromSection("ImageTrans", "Wait"), out int settingSeconds))
                 {
                     return settingSeconds;
                 }
-
-                // 모든 경우에 실패하면 기본값 30초를 반환합니다.
                 return 30;
             }
         }
 
-        /// <summary>
-        /// 동일한 BaseName을 가진 이미지 파일 그룹을 찾아 PDF로 병합합니다.
-        /// </summary>
-        /// <param name="baseName">파일 이름에서 페이지 번호를 제외한 공통 부분입니다.</param>
         private void MergeImagesForBaseName(string baseName)
         {
-            // *** 수정된 부분: 누락되었던 메서드 전체를 추가합니다. ***
-
-            // 1. 중복 병합 방지: 이미 이 baseName으로 병합을 시도했다면 건너뜁니다.
             lock (_mergedBaseNames)
             {
                 if (_mergedBaseNames.Contains(baseName))
@@ -339,24 +396,22 @@ namespace ITM_Agent.Panels
                 _mergedBaseNames.Add(baseName);
             }
 
-            // 2. 병합에 필요한 정보(감시 폴더, 출력 폴더 등)를 설정에서 가져옵니다.
             string watchFolder = _settingsManager.GetValueFromSection("ImageTrans", "Target");
             string outputFolder = _settingsManager.GetValueFromSection("ImageTrans", "SaveFolder");
             if (string.IsNullOrEmpty(outputFolder) || !Directory.Exists(outputFolder))
             {
-                outputFolder = watchFolder; // 출력 폴더가 없으면 감시 폴더를 사용
+                _logManager.LogDebug($"[ucImageTransPanel] Output folder is not set. Using watch folder '{watchFolder}' as fallback.");
+                outputFolder = watchFolder;
             }
 
-            // 파일 이름에 포함될 수 있는 '.' 문자를 '_'로 치환하여 안전한 파일명 생성
             string safeBaseName = baseName.Replace('.', '_');
             string outputPdfPath = Path.Combine(outputFolder, $"{safeBaseName}.pdf");
 
             try
             {
-                // 3. 지원하는 이미지 확장자 목록을 정의합니다.
                 var imageExtensions = new[] { ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp" };
-
-                // 4. 감시 폴더에서 baseName을 포함하는 모든 이미지 파일을 찾아서 페이지 번호순으로 정렬합니다.
+                
+                _logManager.LogDebug($"[ucImageTransPanel] Searching for images with base name '{baseName}' in '{watchFolder}'.");
                 var imageList = Directory.GetFiles(watchFolder, $"{baseName}_*.*")
                     .Where(p => imageExtensions.Contains(Path.GetExtension(p).ToLowerInvariant()))
                     .Select(p => {
@@ -373,10 +428,14 @@ namespace ITM_Agent.Panels
                     .Select(x => x.Path)
                     .ToList();
 
-                // 5. 병합할 이미지가 있는 경우, PdfMergeManager에 작업을 위임합니다.
                 if (imageList.Count > 0)
                 {
+                    _logManager.LogEvent($"[ucImageTransPanel] Found {imageList.Count} images to merge into '{Path.GetFileName(outputPdfPath)}'.");
                     _pdfMergeManager.MergeImagesToPdf(imageList, outputPdfPath);
+                }
+                else
+                {
+                    _logManager.LogEvent($"[ucImageTransPanel] No image files found for merging with base name: {baseName}");
                 }
             }
             catch (Exception ex)
@@ -384,46 +443,7 @@ namespace ITM_Agent.Panels
                 _logManager.LogError($"[ucImageTransPanel] PDF merge failed for baseName '{baseName}': {ex.Message}");
             }
         }
-
-        private void MergeImageGroup(string baseName)
-        {
-            lock (_mergedBaseNames)
-            {
-                if (_mergedBaseNames.Contains(baseName)) return;
-                _mergedBaseNames.Add(baseName);
-            }
-
-            string watchFolder = _settingsManager.GetValueFromSection("ImageTrans", "Target");
-            string outputFolder = _settingsManager.GetValueFromSection("ImageTrans", "SaveFolder") ?? watchFolder;
-            string safeBaseName = baseName.Replace('.', '_');
-            string outputPdfPath = Path.Combine(outputFolder, $"{safeBaseName}.pdf");
-
-            try
-            {
-                var imageExtensions = new[] { ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp" };
-                var imageList = Directory.GetFiles(watchFolder, $"{baseName}_*.*")
-                    .Where(p => imageExtensions.Contains(Path.GetExtension(p).ToLowerInvariant()))
-                    .Select(p => new { Path = p, Page = int.Parse(Regex.Match(Path.GetFileNameWithoutExtension(p), @"_(?<page>\d+)$").Groups["page"].Value) })
-                    .OrderBy(x => x.Page)
-                    .Select(x => x.Path)
-                    .ToList();
-
-                if (imageList.Count > 0)
-                {
-                    _pdfMergeManager.MergeImagesToPdf(imageList, outputPdfPath);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logManager.LogError($"[ucImageTransPanel] PDF 병합 실패 (BaseName: {baseName}): {ex.Message}");
-            }
-            finally
-            {
-                // 한 번 시도한 그룹은 다음 감지 시 중복 실행되지 않도록 함
-                // 성공 여부와 관계없이 baseName을 제거하지 않아야 중복 방지됨
-            }
-        }
-
+        
         #endregion
 
         #region --- Public Control Methods ---
@@ -431,7 +451,8 @@ namespace ITM_Agent.Panels
         public void UpdateStatusOnRun(bool isRunning)
         {
             _isRunning = isRunning;
-
+            _logManager.LogEvent($"[ucImageTransPanel] Run status updated. IsRunning: {isRunning}");
+            
             SetControlsEnabled(!isRunning);
 
             if (isRunning)
@@ -462,8 +483,9 @@ namespace ITM_Agent.Panels
 
         public new void Dispose()
         {
+            _logManager.LogDebug("[ucImageTransPanel] Disposing panel...");
             StopWatchingFolder();
-            base.Dispose();
+            base.Dispose(true);
         }
 
         #endregion
