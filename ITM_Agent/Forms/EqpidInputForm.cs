@@ -1,4 +1,4 @@
-﻿// ITM_Agent/Forms/EqpidInputForm.cs
+// ITM_Agent/Forms/EqpidInputForm.cs
 using System;
 using System.Drawing;
 using System.Drawing.Imaging;
@@ -202,7 +202,11 @@ namespace ITM_Agent.Forms
         /// </summary>
         private Image CreateTransparentImage(string filePath, int alpha)
         {
-            if (!File.Exists(filePath)) return null;
+            if (!File.Exists(filePath))
+            {
+                Console.WriteLine($"[WARNING] EqpidInputForm - Icon file not found at: {filePath}");
+                return null;
+            }
 
             try
             {
@@ -223,7 +227,7 @@ namespace ITM_Agent.Forms
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[EqpidInputForm] Could not create transparent image: {ex.Message}");
+                Console.WriteLine($"[ERROR] EqpidInputForm - Could not create transparent image: {ex.Message}");
                 return null;
             }
         }
