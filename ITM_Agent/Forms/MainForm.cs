@@ -141,7 +141,7 @@ namespace ITM_Agent.Forms
                 this.Invoke(new Action(RefreshUIState));
                 return;
             }
-            
+
             _logManager.LogDebug($"[MainForm] Refreshing UI state. IsRunning: {_isRunning}");
 
             // 1. 모든 자식 패널에 실행 상태 전파 (활성화/비활성화)
@@ -195,7 +195,7 @@ namespace ITM_Agent.Forms
                 this.Invoke(new Action<bool>(ConfigPanel_ReadyStatusChanged), isReady);
                 return;
             }
-            
+
             _logManager.LogDebug($"[MainForm] ConfigPanel_ReadyStatusChanged received: isReady = {isReady}");
 
             // 실행 중이 아닐 때만 UI 상태를 갱신
@@ -338,7 +338,7 @@ namespace ITM_Agent.Forms
                 }
                 else
                 {
-                     _logManager.LogDebug("[MainForm] Save file dialog was canceled.");
+                    _logManager.LogDebug("[MainForm] Save file dialog was canceled.");
                 }
             }
         }
@@ -364,7 +364,7 @@ namespace ITM_Agent.Forms
                 this.Invoke(new Action(() => UpdateMainStatus(status, color)));
                 return;
             }
-            
+
             _logManager.LogDebug($"[MainForm] Updating main status. Text: '{status}', Color: {color.Name}");
 
             ts_Status.Text = status;
@@ -422,7 +422,7 @@ namespace ITM_Agent.Forms
 
             _logManager.LogDebug("[MainForm] Disposing TrayIcon...");
             _trayIcon?.Dispose();
-            
+
             _logManager.LogEvent("[MainForm] Cleanup complete. Exiting application.");
             Application.Exit();
         }
@@ -480,13 +480,13 @@ namespace ITM_Agent.Forms
                 _logManager.LogDebug("[MainForm] ShowUserControl called with null control.");
                 return;
             }
-            
+
             if (pMain.Controls.Count > 0 && pMain.Controls[0] == control)
             {
                 _logManager.LogDebug($"[MainForm] UserControl '{control.Name}' is already visible.");
                 return;
             }
-            
+
             _logManager.LogEvent($"[MainForm] Displaying panel: {control.Name}");
             pMain.Controls.Clear();
             control.Dock = DockStyle.Fill;
