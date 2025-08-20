@@ -1,4 +1,4 @@
-﻿// ITM_Agent.Core/PerformanceDbWriter.cs
+// ITM_Agent.Core/PerformanceDbWriter.cs
 using ITM_Agent.Common;
 using ITM_Agent.Common.Interfaces;
 using Npgsql;
@@ -27,11 +27,15 @@ namespace ITM_Agent.Core
         {
             lock (_instanceLock)
             {
-                if (_currentInstance != null) return;
+                if (_currentInstance != null)
+                {
+                    logger.LogDebug("[PerformanceDbWriter] Start requested but service is already running.");
+                    return;
+                }
 
+                logger.LogEvent("[PerformanceDbWriter] Starting service...");
                 PerformanceMonitor.Instance.StartSampling(); // 데이터 수집 시작
                 _currentInstance = new PerformanceDbWriter(eqpid, eqpidManager, logger);
-                logger.LogEvent("[PerformanceDbWriter] Service started.");
             }
         }
 
@@ -43,7 +47,8 @@ namespace ITM_Agent.Core
             lock (_instanceLock)
             {
                 if (_currentInstance == null) return;
-
+                
+                _currentInstance._logManager.LogEvent("[PerformanceDbWriter] Stopping service...");
                 PerformanceMonitor.Instance.StopSampling(); // 데이터 수집 중지
                 _currentInstance.Dispose();
                 _currentInstance = null;
@@ -73,8 +78,10 @@ namespace ITM_Agent.Core
             _eqpidManager = eqpidManager;
             _logManager = logger;
 
+            _logManager.LogDebug($"[PerformanceDbWriter] Service instance created for Eqpid: '{_eqpid}'");
             PerformanceMonitor.Instance.OnSample += OnSampleReceived; // 성능 데이터 구독
             _flushTimer = new System.Threading.Timer(_ => FlushBufferToDb(), null, FLUSH_INTERVAL_MS, FLUSH_INTERVAL_MS);
+            _logManager.LogDebug($"[PerformanceDbWriter] DB flush timer started with {FLUSH_INTERVAL_MS}ms interval.");
         }
 
         #endregion
@@ -86,8 +93,10 @@ namespace ITM_Agent.Core
             lock (_bufferLock)
             {
                 _buffer.Add(metric);
+                _logManager.LogDebug($"[PerformanceDbWriter] Metric sample received and buffered. CPU: {metric.CpuUsage:F2}, Mem: {metric.MemoryUsage:F2}. Buffer count: {_buffer.Count}");
                 if (_buffer.Count >= BULK_WRITE_COUNT)
                 {
+                    _logManager.LogDebug($"[PerformanceDbWriter] Buffer reached bulk write count ({_buffer.Count}/{BULK_WRITE_COUNT}). Flushing to DB immediately.");
                     // 버퍼가 가득 차면 즉시 DB에 기록
                     FlushBufferToDb();
                 }
@@ -107,7 +116,7 @@ namespace ITM_Agent.Core
                 _buffer.Clear();
             }
 
-            _logManager.LogDebug($"[PerformanceDbWriter] Flushing {batch.Count} performance metrics to DB.");
+            _logManager.LogEvent($"[PerformanceDbWriter] Flushing {batch.Count} performance metrics to DB.");
             string connString = DatabaseInfo.CreateDefault().GetConnectionString();
 
             try
@@ -115,6 +124,7 @@ namespace ITM_Agent.Core
                 using (var conn = new NpgsqlConnection(connString))
                 {
                     conn.Open();
+                    _logManager.LogDebug("[PerformanceDbWriter] Database connection opened for flushing data.");
                     using (var tx = conn.BeginTransaction())
                     {
                         const string sql = @"
@@ -133,9 +143,6 @@ namespace ITM_Agent.Core
                                 // TimeSyncProvider를 통해 KST로 보정된 서버 시간 계산
                                 var serverTimestamp = TimeSyncProvider.Instance.ToSynchronizedKst(timestamp);
 
-                                // *** 수정된 부분: 'serv_ts' 값에서 밀리초를 제거합니다. ***
-                                // 보정된 KST 시간(serverTimestamp)을 기반으로 시/분/초까지만 포함된
-                                // 새로운 DateTime 객체를 생성하여 밀리초를 0으로 만듭니다.
                                 var serverTimestampWithoutMilliseconds = new DateTime(
                                     serverTimestamp.Year,
                                     serverTimestamp.Month,
@@ -144,8 +151,9 @@ namespace ITM_Agent.Core
                                     serverTimestamp.Minute,
                                     serverTimestamp.Second
                                 );
+                                
+                                _logManager.LogDebug($"[PerformanceDbWriter] Processing metric: ts={timestamp:s}, serv_ts={serverTimestampWithoutMilliseconds:s}");
 
-                                // CPU 사용량이 0보다 크지만 반올림 후 0이 되는 경우 0.01로 보정
                                 float cpuUsage = (float)Math.Round(metric.CpuUsage, 2);
                                 if (cpuUsage == 0.0f && metric.CpuUsage > 0.0f)
                                 {
@@ -162,13 +170,17 @@ namespace ITM_Agent.Core
                             }
                         }
                         tx.Commit();
+                        _logManager.LogDebug($"[PerformanceDbWriter] DB transaction committed for {batch.Count} metrics.");
                     }
                 }
+                 _logManager.LogEvent($"[PerformanceDbWriter] Successfully flushed {batch.Count} metrics to DB.");
             }
             catch (Exception ex)
             {
                 _logManager.LogError($"[PerformanceDbWriter] Failed to flush performance data to DB: {ex.Message}");
-                // 실패 시 데이터를 버퍼에 다시 넣는 로직을 추가할 수 있으나, 여기서는 단순 실패로 처리
+                _logManager.LogDebug($"[PerformanceDbWriter] DB flush exception details: {ex.ToString()}");
+                // 실패 시 데이터를 버퍼에 다시 넣는 로직을 추가할 수 있으나, 현재는 유실 처리됨.
+                // lock(_bufferLock) { _buffer.InsertRange(0, batch); } // 필요 시 활성화
             }
         }
 
@@ -176,10 +188,12 @@ namespace ITM_Agent.Core
 
         public void Dispose()
         {
-            _logManager.LogEvent("[PerformanceDbWriter] Service stopping.");
+            _logManager.LogEvent("[PerformanceDbWriter] Service instance disposing.");
             PerformanceMonitor.Instance.OnSample -= OnSampleReceived; // 구독 해제
             _flushTimer?.Dispose();
+            _logManager.LogDebug("[PerformanceDbWriter] Flushing remaining buffer before shutdown...");
             FlushBufferToDb(); // 종료 전 남은 데이터 모두 기록
+            _logManager.LogEvent("[PerformanceDbWriter] Service stopped.");
         }
     }
 }
