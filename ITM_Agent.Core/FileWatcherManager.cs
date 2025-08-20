@@ -1,4 +1,4 @@
-﻿// ITM_Agent.Core/FileWatcherManager.cs
+// ITM_Agent.Core/FileWatcherManager.cs
 using ITM_Agent.Common.Interfaces;
 using System;
 using System.Collections.Generic;
@@ -36,25 +36,28 @@ namespace ITM_Agent.Core
         {
             if (_isRunning)
             {
-                _logManager.LogEvent("[FileWatcherManager] File monitoring is already running.");
+                _logManager.LogEvent("[FileWatcherManager] File monitoring is already running. Start request ignored.");
                 return;
             }
 
-            _logManager.LogEvent("[FileWatcherManager] Initializing watchers...");
+            _logManager.LogEvent("[FileWatcherManager] Starting file monitoring...");
             StopWatchers(); // 기존 Watcher 정리
 
             var targetFolders = _settingsManager.GetFoldersFromSection("[TargetFolders]");
             if (targetFolders == null || !targetFolders.Any())
             {
                 _logManager.LogEvent("[FileWatcherManager] No target folders configured for monitoring.");
+                _isRunning = true; // 감시대상이 없어도 서비스는 running 상태로 전환
                 return;
             }
+            
+            _logManager.LogDebug($"[FileWatcherManager] Found {targetFolders.Count} target folder(s) to monitor.");
 
             foreach (var folder in targetFolders)
             {
                 if (!Directory.Exists(folder))
                 {
-                    _logManager.LogError($"[FileWatcherManager] Target folder does not exist: {folder}");
+                    _logManager.LogError($"[FileWatcherManager] Target folder does not exist, skipping: {folder}");
                     continue;
                 }
 
@@ -76,11 +79,12 @@ namespace ITM_Agent.Core
 
                     watcher.EnableRaisingEvents = true;
                     _watchers.Add(watcher);
-                    _logManager.LogDebug($"[FileWatcherManager] Watcher started for folder: {folder}");
+                    _logManager.LogDebug($"[FileWatcherManager] Watcher created successfully for folder: {folder}");
                 }
                 catch (Exception ex)
                 {
                     _logManager.LogError($"[FileWatcherManager] Failed to start watcher for {folder}. Error: {ex.Message}");
+                    _logManager.LogDebug($"[FileWatcherManager] Watcher startup exception details: {ex.ToString()}");
                 }
             }
 
@@ -95,6 +99,7 @@ namespace ITM_Agent.Core
         {
             if (!_isRunning && !_watchers.Any()) return;
 
+            _logManager.LogEvent("[FileWatcherManager] Stopping all file watchers...");
             foreach (var watcher in _watchers)
             {
                 watcher.EnableRaisingEvents = false;
@@ -106,12 +111,14 @@ namespace ITM_Agent.Core
             }
             _watchers.Clear();
             _isRunning = false;
-            _logManager.LogEvent("[FileWatcherManager] File monitoring stopped.");
+            _logManager.LogEvent("[FileWatcherManager] All file watchers stopped and disposed.");
         }
 
         private void OnWatcherError(object sender, ErrorEventArgs e)
         {
-            _logManager.LogError($"[FileWatcherManager] A watcher error occurred: {e.GetException()?.Message}");
+            // Watcher의 내부 버퍼 오버플로 등의 심각한 오류 기록
+            _logManager.LogError($"[FileWatcherManager] A critical watcher error occurred: {e.GetException()?.Message}");
+            _logManager.LogDebug($"[FileWatcherManager] Watcher error exception details: {e.GetException()?.ToString()}");
         }
 
         private async void OnFileEvent(object sender, FileSystemEventArgs e)
@@ -119,15 +126,19 @@ namespace ITM_Agent.Core
             if (!_isRunning) return;
 
             // 디렉터리 이벤트는 무시
-            if (Directory.Exists(e.FullPath)) return;
-
-            if (IsDuplicateEvent(e.FullPath))
+            if (Directory.Exists(e.FullPath))
             {
-                _logManager.LogDebug($"[FileWatcherManager] Duplicate event ignored: {e.ChangeType} - {e.FullPath}");
+                _logManager.LogDebug($"[FileWatcherManager] Directory event ignored: {e.ChangeType} on {e.FullPath}");
                 return;
             }
 
-            _logManager.LogDebug($"[FileWatcherManager] Event detected: {e.ChangeType} on {e.FullPath}");
+            if (IsDuplicateEvent(e.FullPath))
+            {
+                _logManager.LogDebug($"[FileWatcherManager] Duplicate event ignored for {e.ChangeType} on {e.FullPath}");
+                return;
+            }
+
+            _logManager.LogDebug($"[FileWatcherManager] Event detected: {e.ChangeType} on '{e.FullPath}'");
 
             if (e.ChangeType == WatcherChangeTypes.Created || e.ChangeType == WatcherChangeTypes.Changed)
             {
@@ -135,12 +146,13 @@ namespace ITM_Agent.Core
             }
             else if (e.ChangeType == WatcherChangeTypes.Deleted)
             {
-                _logManager.LogEvent($"[FileWatcherManager] File Deleted: {Path.GetFileName(e.FullPath)}");
+                _logManager.LogEvent($"[FileWatcherManager] File deleted event detected: {Path.GetFileName(e.FullPath)}");
             }
         }
 
         private async Task ProcessFileAsync(string filePath)
         {
+            _logManager.LogDebug($"[FileWatcherManager] Starting to process file: {filePath}");
             if (!File.Exists(filePath))
             {
                 _logManager.LogDebug($"[FileWatcherManager] File no longer exists, skipping processing: {filePath}");
@@ -155,6 +167,7 @@ namespace ITM_Agent.Core
 
             string fileName = Path.GetFileName(filePath);
             var regexList = _settingsManager.GetRegexList();
+            _logManager.LogDebug($"[FileWatcherManager] Checking {regexList.Count} regex rules for file: {fileName}");
 
             foreach (var kvp in regexList)
             {
@@ -162,23 +175,25 @@ namespace ITM_Agent.Core
                 {
                     if (Regex.IsMatch(fileName, kvp.Key, RegexOptions.IgnoreCase))
                     {
+                        _logManager.LogDebug($"[FileWatcherManager] File '{fileName}' matched regex '{kvp.Key}'.");
                         string destinationFolder = kvp.Value;
                         string destinationFile = Path.Combine(destinationFolder, fileName);
 
                         Directory.CreateDirectory(destinationFolder); // 대상 폴더가 없으면 생성
 
                         File.Copy(filePath, destinationFile, true); // 덮어쓰기
-                        _logManager.LogEvent($"[FileWatcherManager] File copied: {fileName} -> {destinationFolder}");
+                        _logManager.LogEvent($"[FileWatcherManager] File copied successfully: '{fileName}' -> '{destinationFolder}'");
                         return; // 첫 번째 매칭되는 규칙에 따라 처리 후 종료
                     }
                 }
                 catch (Exception ex)
                 {
-                    _logManager.LogError($"[FileWatcherManager] Error copying file {fileName}: {ex.Message}");
+                    _logManager.LogError($"[FileWatcherManager] Error copying file '{fileName}' to '{kvp.Value}': {ex.Message}");
+                    _logManager.LogDebug($"[FileWatcherManager] File copy exception details: {ex.ToString()}");
                     return; // 에러 발생 시 더 이상 처리하지 않음
                 }
             }
-            _logManager.LogDebug($"[FileWatcherManager] No matching regex for file: {fileName}");
+            _logManager.LogDebug($"[FileWatcherManager] No matching regex found for file: {fileName}");
         }
 
         private bool IsDuplicateEvent(string filePath)
@@ -200,24 +215,34 @@ namespace ITM_Agent.Core
 
         private async Task<bool> WaitForFileReadyAsync(string filePath, int maxRetries = 10, int delayMs = 300)
         {
+            _logManager.LogDebug($"[FileWatcherManager] Waiting for file to become ready: {filePath}");
             for (int attempt = 0; attempt < maxRetries; attempt++)
             {
                 try
                 {
                     using (File.Open(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                     {
+                        _logManager.LogDebug($"[FileWatcherManager] File is ready after {attempt + 1} attempt(s).");
                         return true; // 파일 접근 성공
                     }
                 }
                 catch (IOException)
                 {
-                    await Task.Delay(delayMs); // 파일이 잠겨있으면 대기
+                    // 파일이 잠겨있으면 대기 후 재시도
+                    if (attempt < maxRetries - 1)
+                    {
+                        _logManager.LogDebug($"[FileWatcherManager] File is locked. Retrying in {delayMs}ms... (Attempt {attempt + 1}/{maxRetries})");
+                        await Task.Delay(delayMs);
+                    }
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
+                    _logManager.LogError($"[FileWatcherManager] Unexpected error while waiting for file '{filePath}': {ex.Message}");
+                    _logManager.LogDebug($"[FileWatcherManager] WaitForFileReady exception details: {ex.ToString()}");
                     return false; // 그 외 예외는 즉시 실패 처리
                 }
             }
+            _logManager.LogDebug($"[FileWatcherManager] File was not ready after {maxRetries} retries: {filePath}");
             return false;
         }
     }
