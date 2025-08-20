@@ -49,7 +49,7 @@ namespace ITM_Agent.Panels
 
             InitializeComponent();
             RegisterEventHandlers();
-            
+
             _logManager.LogDebug("[ucUploadPanel] Starting background upload queue processing task.");
             Task.Run(() => ProcessUploadQueueAsync(_cts.Token));
         }
@@ -97,7 +97,7 @@ namespace ITM_Agent.Panels
 
         private void LoadTargetFolderItems()
         {
-             _logManager.LogDebug("[ucUploadPanel] Refreshing target folder items in dropdowns.");
+            _logManager.LogDebug("[ucUploadPanel] Refreshing target folder items in dropdowns.");
             var targetFolders = _configPanel.GetRegexTargetFolders();
             var allCombos = new[] { cb_WaferFlat_Path, cb_PreAlign_Path, cb_ErrPath, cb_ImgPath, cb_EvPath, cb_WavePath };
 
@@ -120,7 +120,7 @@ namespace ITM_Agent.Panels
                 this.Invoke((MethodInvoker)LoadPluginItems);
                 return;
             }
-             _logManager.LogDebug("[ucUploadPanel] Refreshing plugin items in dropdowns.");
+            _logManager.LogDebug("[ucUploadPanel] Refreshing plugin items in dropdowns.");
             var pluginNames = _pluginPanel.GetLoadedPlugins().Select(p => p.PluginName).ToArray();
             var allCombos = new[] { cb_FlatPlugin, cb_PreAlignPlugin, cb_ErrPlugin, cb_ImagePlugin, cb_EvPlugin, cb_WavePlugin };
 
@@ -153,7 +153,7 @@ namespace ITM_Agent.Panels
             }
             if (!Directory.Exists(folder))
             {
-                 _logManager.LogError($"[ucUploadPanel] Save failed for '{key}': Folder '{folder}' does not exist.");
+                _logManager.LogError($"[ucUploadPanel] Save failed for '{key}': Folder '{folder}' does not exist.");
                 MessageBox.Show("선택한 폴더가 존재하지 않습니다.", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
@@ -182,7 +182,7 @@ namespace ITM_Agent.Panels
 
         private void LoadSetting(string key, ComboBox comboPath, ComboBox comboPlugin)
         {
-             _logManager.LogDebug($"[ucUploadPanel] Loading setting for '{key}'.");
+            _logManager.LogDebug($"[ucUploadPanel] Loading setting for '{key}'.");
             string settingValue = _settingsManager.GetValueFromSection(UploadSection, key);
             if (string.IsNullOrEmpty(settingValue))
             {
@@ -197,7 +197,7 @@ namespace ITM_Agent.Panels
             {
                 string folder = folderMatch.Groups[1].Value.Trim();
                 string plugin = pluginMatch.Groups[1].Value.Trim();
-                
+
                 _logManager.LogDebug($"[ucUploadPanel] Found setting for '{key}': Folder='{folder}', Plugin='{plugin}'.");
 
                 comboPath.SelectedItem = folder;
@@ -272,7 +272,7 @@ namespace ITM_Agent.Panels
                     else if (key == "Wave") pluginName = cb_WavePlugin.Text;
                 });
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
                 _logManager.LogError($"[ucUploadPanel] Error getting plugin name from UI thread for key '{key}': {ex.Message}");
                 return;
@@ -395,7 +395,7 @@ namespace ITM_Agent.Panels
                     }
                 });
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
                 _logManager.LogError($"[ucUploadPanel] Error getting plugin name from UI for immediate processing (key '{dataTypeKey}'): {ex.Message}");
                 return;
@@ -450,7 +450,7 @@ namespace ITM_Agent.Panels
         public void CleanUp()
         {
             _logManager.LogEvent("[ucUploadPanel] CleanUp called. Stopping background tasks and watchers.");
-            _cts.Cancel(); 
+            _cts.Cancel();
             _cts.Dispose();
 
             var keys = _watchers.Keys.ToList();
@@ -466,7 +466,7 @@ namespace ITM_Agent.Panels
         {
             _logManager.LogEvent("[ucUploadPanel] Received PluginsChanged event. Refreshing plugin lists.");
             LoadPluginItems();
-            
+
             CheckAndClearInvalidPluginSetting("WaferFlat", cb_WaferFlat_Path, cb_FlatPlugin);
             CheckAndClearInvalidPluginSetting("PreAlign", cb_PreAlign_Path, cb_PreAlignPlugin);
             CheckAndClearInvalidPluginSetting("Error", cb_ErrPath, cb_ErrPlugin);
