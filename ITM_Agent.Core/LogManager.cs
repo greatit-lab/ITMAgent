@@ -1,4 +1,4 @@
-﻿// ITM_Agent.Core/LogManager.cs
+// ITM_Agent.Core/LogManager.cs
 using ITM_Agent.Common.Interfaces;
 using System;
 using System.IO;
@@ -30,7 +30,15 @@ namespace ITM_Agent.Core
         public LogManager(string baseDirectory)
         {
             _logFolderPath = Path.Combine(baseDirectory, "Logs");
-            Directory.CreateDirectory(_logFolderPath);
+            try
+            {
+                Directory.CreateDirectory(_logFolderPath);
+            }
+            catch(Exception ex)
+            {
+                // 로그 폴더 생성 실패 시 콘솔에 기록. 애플리케이션 중단은 하지 않음.
+                Console.WriteLine($"[CRITICAL] LogManager - Failed to create log directory at '{_logFolderPath}': {ex.Message}");
+            }
         }
 
         #region --- Public Log Methods ---
@@ -122,8 +130,8 @@ namespace ITM_Agent.Core
             }
             catch (Exception ex)
             {
-                // 재시도 후에도 실패 시 콘솔에 에러 출력
-                Console.WriteLine($"Failed to write log to {filePath} after retries: {ex.Message}");
+                // 재시도 후에도 실패 시 콘솔에 에러 출력 (LogManager가 자기 자신을 로깅할 수 없으므로)
+                Console.WriteLine($"[CRITICAL] LogManager - Failed to write log to {filePath} after retries: {ex.Message}");
             }
         }
 
@@ -135,27 +143,33 @@ namespace ITM_Agent.Core
         {
             if (!File.Exists(filePath)) return;
 
-            var fileInfo = new FileInfo(filePath);
-            if (fileInfo.Length <= MAX_LOG_SIZE) return;
-
-            string directory = Path.GetDirectoryName(filePath);
-            string baseName = Path.GetFileNameWithoutExtension(filePath);
-            string extension = Path.GetExtension(filePath);
-
-            int index = 1;
-            string rotatedPath;
-            do
-            {
-                rotatedPath = Path.Combine(directory, string.Format("{0}_{1}{2}", baseName, index++, extension));
-            } while (File.Exists(rotatedPath));
-
             try
             {
+                var fileInfo = new FileInfo(filePath);
+                if (fileInfo.Length <= MAX_LOG_SIZE) return;
+
+                if(GlobalDebugEnabled)
+                    LogDebug($"[LogManager] Log file '{fileInfo.Name}' exceeds max size ({MAX_LOG_SIZE} bytes). Starting rotation.");
+
+                string directory = Path.GetDirectoryName(filePath);
+                string baseName = Path.GetFileNameWithoutExtension(filePath);
+                string extension = Path.GetExtension(filePath);
+
+                int index = 1;
+                string rotatedPath;
+                do
+                {
+                    rotatedPath = Path.Combine(directory, string.Format("{0}_{1}{2}", baseName, index++, extension));
+                } while (File.Exists(rotatedPath));
+
+                if(GlobalDebugEnabled)
+                    LogDebug($"[LogManager] Rotating '{fileInfo.Name}' to '{Path.GetFileName(rotatedPath)}'.");
+                
                 File.Move(filePath, rotatedPath);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Failed to rotate log file {filePath}: {ex.Message}");
+                Console.WriteLine($"[CRITICAL] LogManager - Failed to rotate log file {filePath}: {ex.Message}");
             }
         }
 
@@ -171,6 +185,9 @@ namespace ITM_Agent.Core
         {
             try
             {
+                if(GlobalDebugEnabled)
+                    Console.WriteLine($"[DEBUG] LogManager - Broadcasting DebugMode ({enabled}) to all loaded plugins.");
+
                 var assemblies = AppDomain.CurrentDomain.GetAssemblies();
                 foreach (var asm in assemblies)
                 {
@@ -200,17 +217,24 @@ namespace ITM_Agent.Core
                             {
                                 try
                                 {
+                                    if(GlobalDebugEnabled)
+                                        Console.WriteLine($"[DEBUG] LogManager - Invoking {method.Name}({enabled}) on type {type.FullName}.");
                                     method.Invoke(null, new object[] { enabled });
                                 }
-                                catch { /* 특정 플러그인 호출 실패는 무시 */ }
+                                catch(Exception ex)
+                                {
+                                     Console.WriteLine($"[ERROR] LogManager - Failed to invoke debug method on {type.FullName}: {ex.Message}");
+                                }
                             }
                         }
                     }
                 }
             }
-            catch { /* 전체 브로드캐스트 실패는 무시 */ }
+            catch (Exception ex)
+            {
+                 Console.WriteLine($"[ERROR] LogManager - An error occurred during plugin debug broadcast: {ex.Message}");
+            }
         }
-
         #endregion
     }
 }
