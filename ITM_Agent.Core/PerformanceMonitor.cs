@@ -1,4 +1,4 @@
-﻿// ITM_Agent.Core/PerformanceMonitor.cs
+// ITM_Agent.Core/PerformanceMonitor.cs
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -30,8 +30,8 @@ namespace ITM_Agent.Core
 
         #region --- Constants and Fields ---
 
-        private const long MAX_LOG_SIZE = 5 * 1024 * 1024;   // 5 MB
-        private const int FLUSH_INTERVAL_MS = 30000;         // 30초마다 파일 쓰기
+        private const long MAX_LOG_SIZE = 5 * 1_024 * 1_024; // 5 MB
+        private const int FLUSH_INTERVAL_MS = 30_000;         // 30초마다 파일 쓰기
         private const int BULK_WRITE_COUNT = 60;             // 60건 이상 쌓이면 즉시 쓰기
 
         private readonly PdhSampler _sampler;
@@ -46,12 +46,22 @@ namespace ITM_Agent.Core
 
         private PerformanceMonitor()
         {
+            Console.WriteLine("[INFO] PerformanceMonitor - Initializing instance...");
             _sampler = new PdhSampler(initialIntervalMs: 5000); // 기본 5초 간격
             _sampler.OnSample += OnSampleReceived;
-            _sampler.OnThresholdExceeded += () => _sampler.IntervalMs = 1000; // 과부하: 1초
-            _sampler.OnBackToNormal += () => _sampler.IntervalMs = 5000;    // 정상: 5초
+            _sampler.OnThresholdExceeded += () =>
+            {
+                Console.WriteLine("[EVENT] PerformanceMonitor - System load threshold exceeded. Increasing sampling frequency.");
+                _sampler.IntervalMs = 1000; // 과부하: 1초
+            };
+            _sampler.OnBackToNormal += () =>
+            {
+                Console.WriteLine("[EVENT] PerformanceMonitor - System load is back to normal. Decreasing sampling frequency.");
+                _sampler.IntervalMs = 5000;    // 정상: 5초
+            };
 
             _flushTimer = new Timer(_ => FlushBufferToFile(), null, Timeout.Infinite, Timeout.Infinite);
+            Console.WriteLine("[INFO] PerformanceMonitor - Instance initialized.");
         }
 
         #region --- Public Control Methods ---
@@ -63,7 +73,12 @@ namespace ITM_Agent.Core
         {
             lock (_syncLock)
             {
-                if (_isSamplingEnabled) return;
+                if (_isSamplingEnabled)
+                {
+                    Console.WriteLine("[DEBUG] PerformanceMonitor - StartSampling called but already running.");
+                    return;
+                }
+                Console.WriteLine("[EVENT] PerformanceMonitor - Starting performance sampling...");
                 _sampler.Start();
                 _isSamplingEnabled = true;
             }
@@ -77,6 +92,7 @@ namespace ITM_Agent.Core
             lock (_syncLock)
             {
                 if (!_isSamplingEnabled) return;
+                Console.WriteLine("[EVENT] PerformanceMonitor - Stopping performance sampling...");
                 _sampler.Stop();
                 SetFileLogging(false); // 샘플링 중지 시 파일 로깅도 비활성화
                 _isSamplingEnabled = false;
@@ -94,11 +110,13 @@ namespace ITM_Agent.Core
 
                 if (enable)
                 {
+                    Console.WriteLine("[EVENT] PerformanceMonitor - Enabling file logging for performance data.");
                     Directory.CreateDirectory(GetLogDirectory());
                     _flushTimer.Change(FLUSH_INTERVAL_MS, FLUSH_INTERVAL_MS);
                 }
                 else
                 {
+                    Console.WriteLine("[EVENT] PerformanceMonitor - Disabling file logging for performance data.");
                     _flushTimer.Change(Timeout.Infinite, Timeout.Infinite);
                     FlushBufferToFile(); // 비활성화 전 남은 버퍼 기록
                 }
@@ -124,8 +142,11 @@ namespace ITM_Agent.Core
             lock (_syncLock)
             {
                 _buffer.Push(metric);
+                // 너무 빈번하므로 이벤트 로그 대신 콘솔 디버그 로그로 변경
+                Console.WriteLine($"[DEBUG] PerformanceMonitor - Sample received. CPU: {metric.CpuUsage:F2}%, Mem: {metric.MemoryUsage:F2}%. Buffer count: {_buffer.Count}");
                 if (_isFileLoggingEnabled && _buffer.Count >= BULK_WRITE_COUNT)
                 {
+                    Console.WriteLine($"[DEBUG] PerformanceMonitor - Buffer reached bulk write count ({_buffer.Count}/{BULK_WRITE_COUNT}). Flushing to file.");
                     FlushBufferToFile();
                 }
             }
@@ -143,6 +164,7 @@ namespace ITM_Agent.Core
 
             if (bufferedMetrics.Length == 0) return;
 
+            Console.WriteLine($"[DEBUG] PerformanceMonitor - Flushing {bufferedMetrics.Length} performance metrics to file.");
             string filePath = Path.Combine(GetLogDirectory(), $"{DateTime.Now:yyyyMMdd}_performance.log");
             RotatePerfLogIfNeeded(filePath);
 
@@ -158,17 +180,18 @@ namespace ITM_Agent.Core
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[PerformanceMonitor] Failed to flush performance log: {ex.Message}");
+                Console.WriteLine($"[ERROR] PerformanceMonitor - Failed to flush performance log to '{filePath}': {ex.Message}");
             }
         }
 
         private void RotatePerfLogIfNeeded(string filePath)
         {
-            var fileInfo = new FileInfo(filePath);
-            if (!fileInfo.Exists || fileInfo.Length <= MAX_LOG_SIZE) return;
-
             try
             {
+                var fileInfo = new FileInfo(filePath);
+                if (!fileInfo.Exists || fileInfo.Length <= MAX_LOG_SIZE) return;
+
+                Console.WriteLine($"[DEBUG] PerformanceMonitor - Performance log '{fileInfo.Name}' exceeds max size. Rotating file.");
                 string dir = fileInfo.DirectoryName;
                 string baseName = Path.GetFileNameWithoutExtension(filePath);
                 string ext = fileInfo.Extension;
@@ -181,10 +204,11 @@ namespace ITM_Agent.Core
                 } while (File.Exists(rotatedPath));
 
                 File.Move(filePath, rotatedPath);
+                Console.WriteLine($"[DEBUG] PerformanceMonitor - Performance log rotated to '{Path.GetFileName(rotatedPath)}'.");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[PerformanceMonitor] Failed to rotate performance log: {ex.Message}");
+                Console.WriteLine($"[ERROR] PerformanceMonitor - Failed to rotate performance log '{filePath}': {ex.Message}");
             }
         }
 
@@ -192,6 +216,7 @@ namespace ITM_Agent.Core
 
         public void Dispose()
         {
+            Console.WriteLine("[INFO] PerformanceMonitor - Disposing instance.");
             StopSampling();
             _flushTimer?.Dispose();
             _sampler?.Dispose();
@@ -234,6 +259,7 @@ namespace ITM_Agent.Core
         private Timer _timer;
         private int _interval;
         private bool _isOverloaded;
+        private bool _isInitialized = false;
 
         public int IntervalMs
         {
@@ -247,47 +273,68 @@ namespace ITM_Agent.Core
 
         public PdhSampler(int initialIntervalMs)
         {
-            _cpuCounter = new PerformanceCounter("Processor", "% Processor Time", "_Total", true);
-            _memFreeMbCounter = new PerformanceCounter("Memory", "Available MBytes", true);
-            _totalMemoryMb = GetTotalMemoryInMb();
-            _interval = initialIntervalMs;
+            try
+            {
+                _cpuCounter = new PerformanceCounter("Processor", "% Processor Time", "_Total", true);
+                _memFreeMbCounter = new PerformanceCounter("Memory", "Available MBytes", true);
+                _totalMemoryMb = GetTotalMemoryInMb();
+                _interval = initialIntervalMs;
+                _isInitialized = true;
+                Console.WriteLine("[INFO] PdhSampler - Performance counters initialized successfully.");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] PdhSampler - Failed to initialize performance counters: {ex.Message}. Performance monitoring will be disabled.");
+                _isInitialized = false;
+            }
         }
 
         public void Start()
         {
+            if (!_isInitialized) return;
             // 초기 더미 호출로 카운터 준비
             _cpuCounter.NextValue();
             _timer = new Timer(_ => Sample(), null, 0, _interval);
+            Console.WriteLine("[INFO] PdhSampler - Sampling timer started.");
         }
 
         public void Stop()
         {
             _timer?.Dispose();
             _timer = null;
+            Console.WriteLine("[INFO] PdhSampler - Sampling timer stopped.");
         }
 
         private void Sample()
         {
-            // 정확한 측정을 위해 1초 대기 후 값 수집 (기존 로직 유지)
-            Thread.Sleep(1000);
-            float cpuValue = _cpuCounter.NextValue();
-            float freeMb = _memFreeMbCounter.NextValue();
-
-            float usedMemoryRatio = (_totalMemoryMb > 0) ? ((_totalMemoryMb - freeMb) / _totalMemoryMb) * 100f : 0f;
-
-            OnSample?.Invoke(new Metric(cpuValue, usedMemoryRatio));
-
-            // 임계치 검사
-            bool isCurrentlyOverloaded = (cpuValue > 75f) || (usedMemoryRatio > 80f);
-            if (isCurrentlyOverloaded && !_isOverloaded)
+            if (!_isInitialized) return;
+            try
             {
-                _isOverloaded = true;
-                OnThresholdExceeded?.Invoke();
+                // 정확한 측정을 위해 1초 대기 후 값 수집 (기존 로직 유지)
+                Thread.Sleep(1000);
+                float cpuValue = _cpuCounter.NextValue();
+                float freeMb = _memFreeMbCounter.NextValue();
+
+                float usedMemoryRatio = (_totalMemoryMb > 0) ? ((_totalMemoryMb - freeMb) / _totalMemoryMb) * 100f : 0f;
+
+                OnSample?.Invoke(new Metric(cpuValue, usedMemoryRatio));
+
+                // 임계치 검사
+                bool isCurrentlyOverloaded = (cpuValue > 75f) || (usedMemoryRatio > 80f);
+                if (isCurrentlyOverloaded && !_isOverloaded)
+                {
+                    _isOverloaded = true;
+                    OnThresholdExceeded?.Invoke();
+                }
+                else if (!isCurrentlyOverloaded && _isOverloaded)
+                {
+                    _isOverloaded = false;
+                    OnBackToNormal?.Invoke();
+                }
             }
-            else if (!isCurrentlyOverloaded && _isOverloaded)
+            catch(Exception ex)
             {
-                _isOverloaded = false;
-                OnBackToNormal?.Invoke();
+                 Console.WriteLine($"[ERROR] PdhSampler - Failed to sample performance data: {ex.Message}");
             }
         }
 
@@ -306,7 +353,10 @@ namespace ITM_Agent.Core
                     }
                 }
             }
-            catch { /* WMI 쿼리 실패 시 0 반환 */ }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] PdhSampler - Failed to query total memory using WMI: {ex.Message}");
+            }
             return 0f;
         }
 
