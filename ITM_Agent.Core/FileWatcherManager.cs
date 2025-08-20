@@ -50,7 +50,7 @@ namespace ITM_Agent.Core
                 _isRunning = true; // 감시대상이 없어도 서비스는 running 상태로 전환
                 return;
             }
-            
+
             _logManager.LogDebug($"[FileWatcherManager] Found {targetFolders.Count} target folder(s) to monitor.");
 
             foreach (var folder in targetFolders)
