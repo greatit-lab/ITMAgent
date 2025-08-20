@@ -125,7 +125,7 @@ namespace ITM_Agent.Core
 
             // 디버깅을 위해 변환 과정을 로그로 남길 수 있지만, 너무 빈번하게 호출되므로 주석 처리
             // Console.WriteLine($"[DEBUG] TimeSyncProvider - Time conversion: {agentLocalTime:s} (Local) -> {synchronizedUtcTime:s} (Sync UTC) -> {kstTime:s} (KST)");
-            
+
             return kstTime;
         }
 
